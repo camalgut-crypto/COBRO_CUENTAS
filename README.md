@@ -17,7 +17,7 @@ el botón **Descargar data**. Tiene una herramienta para hacerle preguntas a los
 | Primeros Pagos | Créditos cuya primera cuota vence este mes: pagaron, en mora, por vencer | ✔ | ✔ (solo gráficos) | ✔ | ✔ |
 | Cono de cobranza | Embudo gestiones → contacto → RPC → promesa → cumplida, por gestor y día | ✔ | ✔ (solo gráficos) | | |
 
-Descargar data: Admin y Gerencia. Administración de usuarios: Admin. Preguntas a la IA: todos, solo sobre sus pestañas.
+Descargar data: Admin, Gerencia y Cobro. Administración de usuarios: Admin. Preguntas a la IA: todos, solo sobre sus pestañas.
 Cada pestaña es un archivo aparte en el bucket y Supabase solo lo entrega a los perfiles que pueden verla.
 
 ## Reglas de cálculo
@@ -30,7 +30,7 @@ Cada pestaña es un archivo aparte en el bucket y Supabase solo lo entrega a los
 - **Primeros Pagos**: primera cuota con vencimiento en el mes en curso. Pagó = último pago posterior al desembolso.
 - **Pago antes**: el último pago del mes fue en o antes del día de pago del crédito.
 - **Gestiones**: el catálogo de códigos repite cada gestión como Admin y Legal; se deja una por gestión, la del tipo de
-  cartera del crédito (Legal si en MCCOLLECT tiene tipo de crédito legal distinto de 0). La última gestión y la última
+  cartera del crédito (Legal si en MCCOLLECT su tipo de crédito legal es JUR o NIIF; el resto es Admin). La última gestión y la última
   promesa de cada crédito son las más recientes del mes.
 - Los rangos (score, desembolso, salario, edad, multiplicador, antigüedades, motor) son los del Excel, con dos
   correcciones: SALARIO_NET de MOTO/PREN (tramo 12,000-14,999.99) y "Pago antes" (en el Excel siempre daba 1).

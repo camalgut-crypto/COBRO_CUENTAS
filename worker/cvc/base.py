@@ -194,8 +194,9 @@ def construir(d: dict[str, pd.DataFrame], hoy: date | None = None) -> tuple[pd.D
     cart["monto_ult_pago"] = num(ca["PR_CL_MONTO_ULT_PAGO"])
     cart["due_diario"] = num(ca["PR_CL_DUE_DIARIO"])
     cart["fecha_proximo_pago"] = fecha(ca["DTE_PROXIMO_PAGO"])
-    legal = cart["tipo_credito_legal"].fillna("0").isin(["0", "0.0"])
-    tipo_cartera_credito = pd.Series(np.where(legal, "Admin", "Legal"), index=cart.index)
+    # Cartera Legal = tipo de crédito legal JUR o NIIF; el resto (vacío, CJT, CON, TEN) es Admin
+    legal = cart["tipo_credito_legal"].fillna("").str.strip().str.upper().isin(["JUR", "NIIF"])
+    tipo_cartera_credito = pd.Series(np.where(legal, "Legal", "Admin"), index=cart.index)
 
     # Gestiones del mes (depuradas) y su resumen por crédito
     g = depurar_gestiones(d["gestiones"], tipo_cartera_credito)

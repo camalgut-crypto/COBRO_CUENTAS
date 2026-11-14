@@ -5,7 +5,7 @@
 -- entrega a cada perfil solo los archivos que puede ver:
 --   admin     (riesgo)   todas las pestañas, descarga, preguntas y administración de usuarios
 --   gerencia             todas las pestañas (solo gráficos), descarga y preguntas
---   cobro                Primeros Pagos y Cartera Activa
+--   cobro                Primeros Pagos y Cartera Activa, descarga y preguntas
 --   comercial            Primeros Pagos
 -- El resumen para la herramienta de preguntas (ia/) solo lo lee la función cvc-preguntar (clave de servicio).
 
@@ -122,7 +122,7 @@ create policy cvc_leer on storage.objects for select to authenticated using (
   bucket_id = 'cvc' and (
     public.dac_rol() = 'sistema'
     or (name like 'pestanas/%' and split_part(split_part(name, '/', 2), '.', 1) = any (public.cvc_pestanas(public.cvc_rol())))
-    or (name like 'descargas/%' and public.cvc_rol() in ('admin','gerencia'))
+    or (name like 'descargas/%' and public.cvc_rol() in ('admin','gerencia','cobro'))
   ));
 drop policy if exists cvc_subir on storage.objects;
 create policy cvc_subir on storage.objects for insert to authenticated

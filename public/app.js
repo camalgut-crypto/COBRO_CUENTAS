@@ -112,7 +112,7 @@ $('fclave').addEventListener('submit', async e => {
 });
 
 const rol = () => S.perfil?.rol;
-const puedeDescargar = () => ['admin', 'gerencia'].includes(rol());
+const puedeDescargar = () => ['admin', 'gerencia', 'cobro'].includes(rol());
 const veTablas = () => rol() !== 'gerencia';   // gerencia: solo gráficos
 
 async function iniciar() {
