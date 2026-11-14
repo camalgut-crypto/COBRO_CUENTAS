@@ -301,7 +301,7 @@ function grafico(id, cfg) {
 }
 
 function ejes({ horizontal = false, apilado = false, fmtValor = fN, max = undefined } = {}) {
-  const valor = { stacked: apilado, beginAtZero: true, max, grid: { color: '#E6E8EC' }, border: { display: false }, ticks: { callback: v => fmtValor(v), maxTicksLimit: 6 } };
+  const valor = { stacked: apilado, beginAtZero: true, max, grid: { color: '#E6E8EC' }, border: { display: false }, ticks: { callback: v => fmtValor(v), maxTicksLimit: 6, precision: fmtValor === fN ? 0 : undefined }, suggestedMax: fmtValor === fN ? 1 : undefined };
   const cat = { stacked: apilado, grid: { display: false }, border: { color: '#C3C7CF' }, ticks: { autoSkip: !horizontal, maxRotation: 0 } };
   return horizontal ? { x: valor, y: cat } : { x: cat, y: valor };
 }
@@ -580,7 +580,7 @@ async function abrir(tab) {
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
   const admin = tab === 'admin';
   $('vistaDatos').hidden = admin; $('vistaAdmin').hidden = !admin;
-  if (admin) return pintarUsuarios();
+  if (admin) { $('preguntas').hidden = true; return pintarUsuarios(); }
   $('cargando').hidden = false; $('vistaDatos').hidden = true;
   try { await bajar(tab); aviso(''); }
   catch (err) { aviso(`No se pudieron cargar los datos de esta pestaña: ${err.message}`, true); }
@@ -590,9 +590,10 @@ async function abrir(tab) {
 
 function pintar() {
   const D = S.datos[S.tab];
-  if (!D) { $('kpis').innerHTML = $('graficos').innerHTML = ''; $('tablaCaja').hidden = true; return; }
+  if (!D) { $('kpis').innerHTML = $('graficos').innerHTML = ''; $('tablaCaja').hidden = true; $('preguntas').hidden = !CFG.IA_CLAUDE; return; }
   pintarFiltros(D);
   ({ cosecha: pintarCosecha, cartera_activa: pintarCartera, primeros_pagos: pintarPrimeros, cono: pintarCono })[S.tab](D);
+  pintarGuiada();
 }
 
 $('tabs').addEventListener('click', e => { const b = e.target.closest('button[data-tab]'); if (b) abrir(b.dataset.tab); });
@@ -633,7 +634,163 @@ $('btnActualizar').addEventListener('click', async () => {
   finally { btn.disabled = false; btn.textContent = 'Actualizar'; }
 });
 
-// ---------- Preguntas (IA) ----------
+// ---------- Preguntas guiadas (sin costo: se calculan en el navegador con los datos de la pestaña) ----------
+// La pregunta se arma con listas: ¿Qué <grupo> tiene <mayor|menor> <indicador>? Usa los filtros que estén aplicados.
+const accCono = G => [() => ({ n: 0, gestionada: 0, contacto: 0, rpc: 0, promesa: 0 }),
+  (a, i) => { a.n += mv(G, 'n', i); for (const k of ['gestionada', 'contacto', 'rpc', 'promesa']) a[k] += mv(G, k, i); }];
+const de = (a, b, u) => `${fN(a)} de ${fN(b)} ${u}`;
+const PREG = {
+  cosecha: {
+    datos: D => D, filas: D => filas(D, filtrosActivos(), S.f._desde, S.f._hasta), acc: accCred, min: 30, tam: a => a.n, u: 'créditos',
+    dims: DIMS_VER_POR,
+    ind: [
+      { id: 'm30', t: '% de mora 30+', v: a => pct(a.m30, a.n), f: fP, pct: true, det: a => de(a.m30, a.n, 'créditos') },
+      { id: 'm90', t: '% de mora 90+', v: a => pct(a.m90, a.n), f: fP, pct: true, det: a => de(a.m90, a.n, 'créditos') },
+      { id: 'b0', t: '% de créditos al día', v: a => pct(a.b0, a.n), f: fP, pct: true, det: a => de(a.b0, a.n, 'créditos') },
+      { id: 'canc', t: '% de créditos cancelados', v: a => pct(a.n - a.act, a.n), f: fP, pct: true, det: a => de(a.n - a.act, a.n, 'créditos') },
+      { id: 'n', t: 'cantidad de créditos desembolsados', v: a => a.n, f: fN, det: a => fM(a.monto) },
+      { id: 'monto', t: 'monto desembolsado', v: a => a.monto, f: fM, det: a => `${fN(a.n)} créditos` },
+      { id: 'saldo', t: 'saldo activo', v: a => a.saldo, f: fM, det: a => `${fN(a.act)} créditos activos` },
+    ],
+    sug: [['¿Qué cosechas tienen la peor mora 30+?', 'mes_desembolso', 'm30', 'mayor', 5],
+      ['¿Qué sucursales tienen más mora 30+?', 'sucursal', 'm30', 'mayor', 10],
+      ['¿Cómo evoluciona la mora 30+ por mes?', 'mes_desembolso', 'm30', 'orden', 0]],
+  },
+  cartera_activa: {
+    datos: D => D, filas: D => filas(D, filtrosActivos(), S.f._desde, S.f._hasta), acc: accCred, min: 20, tam: a => a.act, u: 'créditos activos',
+    dims: [...DIMS_VER_POR, 'mora', 'rodamiento', 'tipo_cartera', 'gestor', 'tipo_pago', 'pago_mes'],
+    ind: [
+      { id: 's30p', t: '% del saldo en mora 30+', v: a => pct(a.s30, a.saldo), f: fP, pct: true, det: a => `${fM(a.s30)} de ${fM(a.saldo)}` },
+      { id: 's30', t: 'saldo en mora 30+', v: a => a.s30, f: fM, det: a => `${fN(a.act)} créditos activos` },
+      { id: 'saldo', t: 'saldo', v: a => a.saldo, f: fM, det: a => `${fN(a.act)} créditos activos` },
+      { id: 'act', t: 'cantidad de créditos activos', v: a => a.act, f: fN, det: a => fM(a.saldo) },
+      { id: 'b0', t: '% de créditos al día', v: a => pct(a.b0, a.act), f: fP, pct: true, det: a => de(a.b0, a.act, 'créditos') },
+      { id: 'desm', t: '% de desmejora (rodamiento)', v: a => pct(a.desm, a.act), f: fP, pct: true, det: a => de(a.desm, a.act, 'créditos') },
+      { id: 'pago', t: '% que pagó este mes', v: a => pct(a.pagoMes, a.act), f: fP, pct: true, det: a => de(a.pagoMes, a.act, 'créditos') },
+    ],
+    sug: [['¿Qué sucursales concentran el saldo en mora 30+?', 'sucursal', 's30', 'mayor', 10],
+      ['¿Qué gestores tienen menos créditos que pagaron este mes?', 'gestor', 'pago', 'menor', 10],
+      ['¿Qué productos desmejoran más?', 'producto_comercial', 'desm', 'mayor', 5]],
+  },
+  primeros_pagos: {
+    datos: D => D, filas: D => filas(D, filtrosActivos()), acc: accPP, min: 5, tam: a => a.venc, u: 'créditos vencidos',
+    dims: DIMS_VER_POR,
+    ind: [
+      { id: 'pmora', t: '% en mora (sobre los vencidos)', v: a => pct(a.mora, a.venc), f: fP, pct: true, det: a => de(a.mora, a.venc, 'vencidos') },
+      { id: 'ppago', t: '% que pagó (sobre los vencidos)', v: a => pct(a.pago, a.venc), f: fP, pct: true, det: a => de(a.pago, a.venc, 'vencidos') },
+      { id: 'mora', t: 'cantidad en mora', v: a => a.mora, f: fN, det: a => `de ${fN(a.venc)} vencidos` },
+      { id: 'sinpago', t: 'cantidad vencida sin pago registrado', v: a => a.sinpago, f: fN, det: a => `de ${fN(a.venc)} vencidos` },
+      { id: 'n', t: 'cantidad de primeras cuotas del mes', v: a => a.n, f: fN, det: a => `${fN(a.venc)} ya vencieron`, tam: a => a.n },
+    ],
+    sug: [['¿Qué promotores tienen más primeros pagos en mora?', 'promotor', 'mora', 'mayor', 10],
+      ['¿Qué sucursales tienen el peor % de mora en primeros pagos?', 'sucursal', 'pmora', 'mayor', 10],
+      ['¿Qué canal paga mejor la primera cuota?', 'canal', 'ppago', 'mayor', 5]],
+  },
+  cono: {
+    datos: D => D.gestiones, filas: D => filasCono(D.gestiones), acc: accCono, min: 30, tam: a => a.n, u: 'gestiones',
+    dims: ['usuario', 'descripcion_accion', 'descripcion_resultado', 'tipo_cartera', 'dia'],
+    ind: [
+      { id: 'rpc', t: '% de RPC', v: a => pct(a.rpc, a.n), f: fP, pct: true, det: a => de(a.rpc, a.n, 'gestiones') },
+      { id: 'contacto', t: '% de contacto', v: a => pct(a.contacto, a.n), f: fP, pct: true, det: a => de(a.contacto, a.n, 'gestiones') },
+      { id: 'prom', t: '% de promesa sobre RPC', v: a => pct(a.promesa, a.rpc), f: fP, pct: true, det: a => de(a.promesa, a.rpc, 'RPC'), tam: a => a.rpc },
+      { id: 'n', t: 'cantidad de gestiones', v: a => a.n, f: fN, det: a => `${fN(a.contacto)} contactos` },
+      { id: 'promesa', t: 'cantidad de promesas', v: a => a.promesa, f: fN, det: a => `${fN(a.rpc)} RPC` },
+    ],
+    sug: [['¿Qué gestores tienen mejor % de RPC?', 'usuario', 'rpc', 'mayor', 10],
+      ['¿Qué gestores logran más promesas?', 'usuario', 'promesa', 'mayor', 10],
+      ['¿Cómo van las gestiones por día?', 'dia', 'n', 'orden', 0]],
+  },
+};
+const nomDim = d => DIM[d] || CONO_DIMS[d] || (d === 'dia' ? 'Día' : d);
+const fClave = (d, k) => (d === 'mes_desembolso' ? fMes(k) : d === 'dia' ? fDia(k) : k);
+let nPreg = 0;
+
+function pintarGuiada() {
+  const P = PREG[S.tab], D = S.datos[S.tab];
+  $('preguntas').hidden = !P || !D;
+  if (!P || !D) return;
+  if ($('fguiada').dataset.tab === S.tab) return;   // conserva la selección al filtrar
+  $('fguiada').dataset.tab = S.tab;
+  const T = P.datos(D);
+  const op = (v, t) => `<option value="${v}">${esc(t)}</option>`;
+  $('fguiada').innerHTML = `<span>¿Qué</span><select id="qDim">${P.dims.filter(d => T.dic[d]).map(d => op(d, nomDim(d).toLowerCase())).join('')}</select>`
+    + `<span>tiene</span><select id="qOrden">${op('mayor', 'mayor')}${op('menor', 'menor')}${op('orden', 'en orden (todos)')}</select>`
+    + `<select id="qInd">${P.ind.map(i => op(i.id, i.t)).join('')}</select><span>?</span>`
+    + `<label class="small">Ver <select id="qTop">${[5, 10, 15].map(n => op(n, n)).join('')}</select></label>`
+    + '<button class="btn">Responder</button>';
+  $('qDim').value = P.dims.find(d => T.dic[d] && d === 'sucursal') || $('qDim').value;
+  $('sugerencias').innerHTML = P.sug.map((s, k) => `<button type="button" data-sug="${k}">${esc(s[0])}</button>`).join('');
+}
+
+function textoFiltros() {
+  const f = S.tab === 'cono' ? Object.entries(S.cono).filter(([, v]) => v).map(([k, v]) => `${k === 'desde' ? 'Desde' : k === 'hasta' ? 'Hasta' : CONO_DIMS[k]}: ${k === 'desde' || k === 'hasta' ? fDia(v) : v}`)
+    : Object.entries(S.f).filter(([, v]) => v).map(([k, v]) => `${k === '_desde' ? 'Cosecha desde' : k === '_hasta' ? 'Cosecha hasta' : DIM[k]}: ${k.startsWith('_') ? fMes(v) : v}`);
+  return f.length ? `Con los filtros aplicados (${f.join(' · ')}). ` : '';
+}
+
+function responder(dim, indId, orden, top) {
+  const P = PREG[S.tab], D = S.datos[S.tab], T = P.datos(D);
+  const I = P.ind.find(x => x.id === indId), tam = I.tam || P.tam;
+  const idx = P.filas(D), [n0, sm] = P.acc(T);
+  const tot = agrupar(T, idx, null, n0, sm).get('Total') || n0();
+  const minimo = I.pct ? P.min : 1;
+  const todos = [...agrupar(T, idx, dim, n0, sm).entries()];
+  let g = todos.filter(([, a]) => tam(a) >= minimo && I.v(a) != null);
+  const omitidos = todos.length - g.length;
+  const crono = orden === 'orden';
+  if (crono) g.sort((x, y) => String(x[0]).localeCompare(String(y[0]), 'es', { numeric: true }));
+  else g.sort((x, y) => (orden === 'mayor' ? I.v(y[1]) - I.v(x[1]) : I.v(x[1]) - I.v(y[1])) || tam(y[1]) - tam(x[1]));
+  const sel = g.slice(0, crono ? 40 : top);
+  const nd = nomDim(dim).toLowerCase();
+  const pregunta = crono ? `¿Cómo se ve ${I.t} por ${nd}?` : `¿Qué ${nd} tiene ${orden} ${I.t}?`;
+  burbuja(pregunta, 'yo');
+  if (!sel.length) return burbuja(`${textoFiltros()}No hay grupos con datos suficientes para responder${I.pct ? ` (mínimo ${minimo} ${P.u} por grupo)` : ''}.`, 'ia');
+  const vt = I.v(tot);
+  let txt = textoFiltros();
+  if (crono) {
+    const may = [...sel].sort((x, y) => I.v(y[1]) - I.v(x[1]))[0], men = [...sel].sort((x, y) => I.v(x[1]) - I.v(y[1]))[0];
+    txt += `${I.t[0].toUpperCase() + I.t.slice(1)} por ${nd}: el más alto es ${fClave(dim, may[0])} con ${I.f(I.v(may[1]))} y el más bajo ${fClave(dim, men[0])} con ${I.f(I.v(men[1]))}. Total: ${I.f(vt)}.`;
+  } else if (orden === 'menor' && I.v(sel[0][1]) === 0) {
+    const ceros = g.filter(([, a]) => I.v(a) === 0);
+    txt += `${fN(ceros.length)} ${ceros.length === 1 ? 'grupo tiene' : 'grupos tienen'} ${I.f(0)} en ${I.t} (${nd}): ${ceros.slice(0, 8).map(([k2]) => fClave(dim, k2)).join(', ')}${ceros.length > 8 ? ', …' : '.'}`;
+  } else {
+    const [k, a] = sel[0];
+    txt += `${nomDim(dim)} con ${orden} ${I.t}: ${fClave(dim, k)}, con ${I.f(I.v(a))} (${I.det(a)}).`;
+    if (I.pct) {
+      const dif = I.v(a) - vt;
+      txt += ` El total es ${fP(vt)}: ${Math.abs(dif).toLocaleString('es-NI', { maximumFractionDigits: 1 })} puntos ${dif >= 0 ? 'por encima' : 'por debajo'}.`;
+    } else txt += ` Representa el ${fP(pct(I.v(a), vt))} del total (${I.f(vt)}).`;
+    if (sel.length > 1) txt += `\nLe siguen: ${sel.slice(1, 4).map(([k2, a2]) => `${fClave(dim, k2)} (${I.f(I.v(a2))})`).join(', ')}.`;
+  }
+  if (I.pct && omitidos) txt += `\nNo se consideran ${fN(omitidos)} grupos con menos de ${minimo} ${P.u}, porque sus porcentajes no son representativos.`;
+  const b = burbuja(txt, 'ia');
+  if (sel.every(([, a2]) => !I.v(a2))) return;   // todo en cero: el gráfico no aporta
+  const id = `gq${++nPreg}`, vertical = crono && (dim === 'mes_desembolso' || dim === 'dia');
+  const caja = document.createElement('div');
+  caja.className = 'lienzo-q';
+  caja.style.height = `${vertical ? 260 : Math.max(120, 30 * sel.length + 30)}px`;
+  caja.innerHTML = `<canvas id="${id}"></canvas>`;
+  b.lastChild.append(caja);
+  const color = I.pct && ['b0', 'canc', 'ppago', 'pago', 'rpc', 'contacto', 'prom'].includes(I.id) ? SERIE[0] : I.pct ? SERIE[2] : SERIE[1];
+  barrasSimples(id, sel.map(([k2]) => fClave(dim, k2)), sel.map(([, a2]) => I.v(a2)),
+    { color, fmt: I.f, horizontal: !vertical, extra: it => I.det(sel[it[0].dataIndex][1]) });
+  $('chat').scrollTop = $('chat').scrollHeight;
+}
+
+$('fguiada').addEventListener('submit', e => {
+  e.preventDefault();
+  responder($('qDim').value, $('qInd').value, $('qOrden').value, +$('qTop').value);
+});
+$('sugerencias').addEventListener('click', e => {
+  const b = e.target.closest('button[data-sug]');
+  if (!b) return;
+  const [, dim, ind, orden, top] = PREG[S.tab].sug[+b.dataset.sug];
+  if (!S.datos[S.tab] || !PREG[S.tab].datos(S.datos[S.tab]).dic[dim]) return;
+  $('qDim').value = dim; $('qInd').value = ind; $('qOrden').value = orden; if (top) $('qTop').value = top;
+  responder(dim, ind, orden, top || 10);
+});
+
+// ---------- Preguntas libres con IA (Claude) — apagadas; se activan con IA_CLAUDE: true en config.js ----------
 const SUGERENCIAS = {
   cosecha: '¿Qué cosechas de los últimos 6 meses tienen la peor mora 30+?',
   cartera_activa: '¿Qué sucursales concentran el saldo en mora 30+?',
@@ -641,10 +798,12 @@ const SUGERENCIAS = {
   cono: '¿Qué gestores tienen mejor porcentaje de RPC y de promesas?',
 };
 function sugerencias() {
+  $('fpregunta').hidden = $('sugIA').hidden = !CFG.IA_CLAUDE;
+  if (!CFG.IA_CLAUDE) return;
   const mias = PESTANAS.filter(p => p.roles.includes(rol()));
-  $('sugerencias').innerHTML = mias.map(p => `<button type="button">${esc(SUGERENCIAS[p.id])}</button>`).join('');
+  $('sugIA').innerHTML = mias.map(p => `<button type="button">${esc(SUGERENCIAS[p.id])}</button>`).join('');
 }
-$('sugerencias').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { $('pregunta').value = b.textContent; $('pregunta').focus(); } });
+$('sugIA').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { $('pregunta').value = b.textContent; $('pregunta').focus(); } });
 
 function burbuja(texto, tipo) {
   const d = document.createElement('div');

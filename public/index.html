@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=2026111401">
+  <link rel="stylesheet" href="styles.css?v=2026111402">
 </head>
 <body>
   <div id="login" class="login" hidden>
@@ -79,7 +79,7 @@
           <ul class="small muted perfiles">
             <li><b>Administrador:</b> todas las pestañas con tablas, descarga, preguntas y usuarios.</li>
             <li><b>Gerencia:</b> todas las pestañas, solo gráficos; puede descargar la data.</li>
-            <li><b>Cobro:</b> Primeros Pagos y Cartera Activa.</li>
+            <li><b>Cobro:</b> Primeros Pagos y Cartera Activa; puede descargar la data.</li>
             <li><b>Comercial:</b> Primeros Pagos.</li>
           </ul>
         </div>
@@ -94,21 +94,23 @@
       <section id="preguntas" class="panel preguntas">
         <div class="panel-tit">
           <h3>Pregúntele a los datos</h3>
-          <span class="small muted">Responde con los resúmenes de las pestañas que usted puede ver, al corte de la última actualización.</span>
+          <span class="small muted">Arme la pregunta con las listas. Responde con los datos de esta pestaña y los filtros que tenga aplicados.</span>
         </div>
         <div id="chat" class="chat"></div>
-        <form id="fpregunta" class="fpregunta">
+        <form id="fguiada" class="fguiada"></form>
+        <div class="sugerencias" id="sugerencias"></div>
+        <form id="fpregunta" class="fpregunta" hidden>
           <input id="pregunta" maxlength="500" placeholder="Ej.: ¿Qué sucursal tiene la peor mora 30+ en las cosechas de los últimos 6 meses?" required>
           <button class="btn" id="btnPreguntar">Preguntar</button>
         </form>
-        <div class="sugerencias" id="sugerencias"></div>
+        <div class="sugerencias" id="sugIA" hidden></div>
       </section>
     </main>
   </div>
   <div id="tip" class="tip" hidden></div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.99.3/dist/umd/supabase.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-  <script src="config.js?v=2026111401"></script>
-  <script src="app.js?v=2026111401"></script>
+  <script src="config.js?v=2026111402"></script>
+  <script src="app.js?v=2026111402"></script>
 </body>
 </html>

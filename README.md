@@ -17,7 +17,12 @@ el botón **Descargar data**. Tiene una herramienta para hacerle preguntas a los
 | Primeros Pagos | Créditos cuya primera cuota vence este mes: pagaron, en mora, por vencer | ✔ | ✔ (solo gráficos) | ✔ | ✔ |
 | Cono de cobranza | Embudo gestiones → contacto → RPC → promesa → cumplida, por gestor y día | ✔ | ✔ (solo gráficos) | | |
 
-Descargar data: Admin, Gerencia y Cobro. Administración de usuarios: Admin. Preguntas a la IA: todos, solo sobre sus pestañas.
+Descargar data: Admin, Gerencia y Cobro. Administración de usuarios: Admin.
+
+**Preguntas guiadas** (todos los perfiles, en cada pestaña): la pregunta se arma con listas — *¿Qué <grupo> tiene
+<mayor | menor | en orden> <indicador>?* — y se responde con un texto (valor, comparación contra el total, los
+siguientes) y un gráfico, usando los filtros aplicados. En indicadores de porcentaje se omiten los grupos pequeños
+(Cosecha 30 créditos, Cartera 20 activos, Primeros Pagos 5 vencidos, Cono 30 gestiones).
 Cada pestaña es un archivo aparte en el bucket y Supabase solo lo entrega a los perfiles que pueden verla.
 
 ## Reglas de cálculo
@@ -59,11 +64,12 @@ una falla y hay copia, se usa la copia y queda el aviso en `worker/logs/actualiz
 
 1. **Supabase – esquema**: ejecutar `supabase/schema.sql` en el SQL Editor del proyecto de Tiempos DAC
    (crea perfiles, botón Actualizar, bitácora de preguntas, bucket `cvc` y permisos; deja al administrador inicial).
-2. **Supabase – función de preguntas**: en Edge Functions crear `cvc-preguntar` con el código de
+2. **(Opcional, con costo) Preguntas libres con IA**: en Edge Functions crear `cvc-preguntar` con el código de
    `supabase/functions/cvc-preguntar/index.ts` y guardar el secret `ANTHROPIC_API_KEY`
    (o con la CLI: `supabase functions deploy cvc-preguntar` y `supabase secrets set ANTHROPIC_API_KEY=...`).
    Usa Claude Opus 5.5 con respaldo automático del servidor si el modelo declina una pregunta; límite 40 preguntas
-   por usuario y día (`LIMITE_DIARIO`).
+   por usuario y día (`LIMITE_DIARIO`). Requiere saldo en la cuenta de la API de Anthropic. Después poner
+   `IA_CLAUDE: true` en `public/config.js`. Mientras esté en `false` solo se ven las preguntas guiadas.
 3. **Entorno en la PC**: `py -3.12 -m venv .venv` y `.venv\Scripts\python.exe -m pip install pandas pyodbc keyring requests openpyxl`.
 4. **Primera carga**: `.venv\Scripts\python.exe worker\actualizar.py --una-vez --forzar todo`.
 5. **Tarea programada**: `powershell -ExecutionPolicy Bypass -File ".\Instalar tarea.ps1"`.
