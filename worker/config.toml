@@ -1,0 +1,35 @@
+# Configuración del proceso de carga del Módulo Cosechas vs Cobro (sin secretos).
+# Credenciales SQL: las mismas de Loan Tape / Módulo PYME (Administrador de credenciales de Windows, "modulo_garantias_sql").
+# Credenciales Supabase: usuario "sistema" de Tiempos DAC (keyring "tiempos_dac_supabase").
+
+hora_diaria = "07:30"      # carga automática diaria (hora de la PC); el botón "Actualizar" la pide al momento
+intentos = 3               # si una consulta falla se reintenta
+espera_minutos = 10        # entre intentos
+dias_empleados = [1, 13, 25]   # Empleados se refresca cada 12 días contando desde el 01 de cada mes
+
+[servidor]
+server = 'SRV-BIJAGUA\RIESGO'   # comillas simples: la barra invertida se toma literal
+database = "LOAN_TAPE"
+driver = "ODBC Driver 18 for SQL Server"   # si no está instalado se usa el más nuevo disponible
+servicio_credenciales = "modulo_garantias_sql"
+
+# Frecuencia de cada consulta: "mensual" (el 01 de cada mes), "empleados" (días de dias_empleados) o "diaria".
+# Las mensuales y Empleados quedan guardadas en worker/data/ y se reutilizan hasta que les toque de nuevo.
+[fuentes]
+loan          = { sql = "worker/sql/loan.sql",          frecuencia = "mensual" }
+genesis       = { sql = "worker/sql/genesis.sql",       frecuencia = "mensual" }
+primera_renov = { sql = "worker/sql/primera_renov.sql", frecuencia = "mensual" }
+reglas_motor  = { sql = "worker/sql/reglas_motor.sql",  frecuencia = "mensual" }
+promotores    = { sql = "worker/sql/promotores.sql",    frecuencia = "mensual" }
+empleados     = { sql = "worker/sql/empleados.sql",     frecuencia = "empleados" }
+cartera       = { sql = "worker/sql/cartera.sql",       frecuencia = "diaria" }
+cendoc        = { sql = "worker/sql/cendoc.sql",        frecuencia = "diaria" }
+gestiones     = { sql = "worker/sql/gestiones.sql",     frecuencia = "diaria" }
+
+[supabase]
+# Mismo proyecto que Tiempos DAC y Auditores; las tablas de este módulo llevan el prefijo cvc_
+url = "https://lzgteejsjxrbadsqlpnd.supabase.co"
+anon_key = "sb_publishable_3v2gGe5N9Oh1eW-9ywMb1g_3Buo8af8"
+usuario = "sistema"
+servicio_credenciales = "tiempos_dac_supabase"
+bucket = "cvc"

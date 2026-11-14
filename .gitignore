@@ -1,0 +1,15 @@
+# Entorno y temporales
+.venv/
+__pycache__/
+worker/logs/
+# Datos: nunca se suben al repositorio (la app los lee del bucket privado de Supabase)
+worker/data/
+public/local/
+*.xlsx
+*.xls
+*.csv
+*.pkl
+.env
+# Queries originales y catálogo de trabajo del analista (las copias que usa el proceso están en worker/sql/)
+/*.sql
+Catalogo_Queries_Cosechas_vs_Cobro.html

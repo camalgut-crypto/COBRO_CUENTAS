@@ -1,0 +1,226 @@
+"""Salidas del módulo a partir de la base:
+- Un archivo por pestaña (columnar, dimensiones codificadas) para que la app arme gráficos y filtros.
+  Cada pestaña es un archivo aparte para que Supabase entregue a cada perfil solo lo que puede ver.
+- Resumen para la herramienta de preguntas (IA), por sección.
+- Excel con la base completa para el botón de descarga.
+"""
+import gzip
+import io
+import json
+from datetime import date, datetime
+
+import numpy as np
+import pandas as pd
+
+DIMS = ["mes_desembolso", "sucursal", "canal", "sucursal_promotor", "promotor", "producto_comercial", "producto_motor",
+        "clasificacion", "categorizacion", "tipo_credito", "medio_captacion", "rango_score", "rango_desembolso",
+        "rango_salario", "rango_edad", "rango_multiplicador", "rango_antig_cliente", "rango_antig_credito",
+        "rango_antig_laboral", "rango_capacidad", "rango_ingreso", "rango_estabilidad", "rango_edad_motor", "perfil_motor",
+        "politica_hit", "genero", "plazo", "empleo_inss", "mora", "rodamiento", "tipo_cartera", "tipo_pago", "pago_mes",
+        "estado_promesa", "ult_resultado", "gestor", "estado_primer_pago", "tipo_credito_legal"]
+MEDIDAS = ["monto_des", "saldopagare", "saldo_doc", "dias_mora", "cuotas_vencidas", "valor_vencido", "cuotas_pagas",
+           "intentos", "gestionada", "contacto", "rpc", "promesa", "monto_promesa", "monto_pagado"]
+PESTANAS = ("cosecha", "cartera_activa", "primeros_pagos", "cono")
+MORA30 = ["B2", "B3", "B4", "B5", "B6", "B7"]
+MORA90 = ["B4", "B5", "B6", "B7"]
+
+
+def _columnar(df: pd.DataFrame, dims: list[str], medidas: list[str], extra: dict | None = None) -> dict:
+    """{n, dic: {dim: [valores]}, datos: {col: [códigos o números]}}: compacto y rápido de filtrar en el navegador."""
+    out = {"n": len(df), "dic": {}, "datos": {}}
+    for c in dims:
+        s = df[c].astype("object").where(df[c].notna(), None)
+        cat = pd.Categorical(s)
+        out["dic"][c] = [str(v) for v in cat.categories]
+        out["datos"][c] = [None if k < 0 else int(k) for k in cat.codes]
+    for c in medidas:
+        v = pd.to_numeric(df[c], errors="coerce").round(2)
+        out["datos"][c] = [None if pd.isna(x) else (int(x) if float(x).is_integer() else float(x)) for x in v]
+    if extra:
+        out.update(extra)
+    return out
+
+
+def _agrupar(df: pd.DataFrame, por: list[str], sumas: list[str]) -> dict:
+    g = df.groupby(por, dropna=False)
+    t = g.size().rename("n").to_frame().join(g[sumas].sum()).reset_index()
+    return _columnar(t, por, ["n"] + sumas)
+
+
+def pestañas(b: pd.DataFrame, g: pd.DataFrame, hoy: date) -> dict[str, dict]:
+    b = b.copy()
+    b["plazo"] = b["numero_cuotas"].map(lambda v: None if pd.isna(v) else f"{int(v)} cuotas")
+    activa = b[b["en_cartera"]]
+    pp = b[b["primer_pago_mes"]].copy()
+    pp["primera_cuota"] = pp["primera_cuota"].dt.strftime("%Y-%m-%d")
+
+    # Cono: gestiones del mes (todas, aunque el crédito no sea de la cosecha) y promesas
+    g = g.copy()
+    g["dia"] = g["fecha_actividad"].dt.strftime("%Y-%m-%d")
+    g["de_la_cosecha"] = np.where(g["credito"].isin(set(b["credito"])), "Sí", "No")
+    for c in ["usuario", "descripcion_accion", "descripcion_resultado", "tipo_cartera", "estado_promesa", "status_promesa_pago"]:
+        g[c] = g[c].fillna("SIN DATO")
+    prom = g[g["promesa"] > 0].copy()
+    prom["fecha_promesa"] = prom["fecha_promesa"].dt.strftime("%Y-%m-%d").fillna("SIN FECHA")
+
+    return {
+        "cosecha": _columnar(b, DIMS, MEDIDAS),
+        "cartera_activa": _columnar(activa, DIMS, MEDIDAS),
+        "primeros_pagos": _columnar(pp, DIMS + ["primera_cuota"], MEDIDAS),
+        "cono": {
+            "gestiones": _agrupar(g, ["dia", "usuario", "descripcion_accion", "descripcion_resultado", "tipo_cartera",
+                                      "de_la_cosecha"], ["gestionada", "contacto", "rpc", "promesa"]),
+            "promesas": _agrupar(prom, ["fecha_promesa", "estado_promesa", "status_promesa_pago", "tipo_cartera",
+                                        "usuario"], ["monto_promesa", "monto_pagado"]),
+        },
+    }
+
+
+# ---------- resumen para la IA ----------
+def _indicadores(df: pd.DataFrame, por: str | None, top: int | None = None) -> list[dict]:
+    def calc(x: pd.DataFrame) -> dict:
+        n, act = len(x), x["en_cartera"].sum()
+        return {"creditos": int(n), "monto_desembolsado": round(float(x["monto_des"].sum()), 0),
+                "cancelados": int(n - act), "activos": int(act),
+                "saldo_activo": round(float(x["saldo_doc"].sum()), 0),
+                "pct_al_dia": round(100 * x["mora"].eq("B0").sum() / n, 1) if n else None,
+                "pct_mora_30": round(100 * x["mora"].isin(MORA30).sum() / n, 1) if n else None,
+                "pct_mora_90": round(100 * x["mora"].isin(MORA90).sum() / n, 1) if n else None,
+                "saldo_mora_30": round(float(x.loc[x["mora"].isin(MORA30), "saldo_doc"].sum()), 0)}
+    if por is None:
+        return [calc(df)]
+    filas = [{por: k, **calc(x)} for k, x in df.groupby(por)]
+    filas.sort(key=lambda r: -r["creditos"])
+    return filas[:top] if top else filas
+
+
+def resumen_ia(b: pd.DataFrame, g: pd.DataFrame, hoy: date) -> dict:
+    activa = b[b["en_cartera"]]
+    pp = b[b["primer_pago_mes"]]
+    venc = pp[pp["primera_cuota_vencida"]]
+    dims_cosecha = ["mes_desembolso", "producto_comercial", "sucursal", "canal", "rango_score", "clasificacion",
+                    "categorizacion", "rango_desembolso", "rango_capacidad", "medio_captacion", "plazo"]
+    b = b.assign(plazo=b["numero_cuotas"].map(lambda v: None if pd.isna(v) else f"{int(v)} cuotas"))
+
+    def pp_por(por, top=None):
+        filas = []
+        for k, x in pp.groupby(por):
+            v = x[x["primera_cuota_vencida"]]
+            filas.append({por: k, "creditos": len(x), "vencidos": len(v),
+                          "pagaron": int(x["estado_primer_pago"].eq("Pagó").sum()),
+                          "en_mora": int(x["estado_primer_pago"].eq("En mora").sum()),
+                          "pct_mora_sobre_vencidos": round(100 * v["estado_primer_pago"].eq("En mora").sum() / len(v), 1) if len(v) else None})
+        filas.sort(key=lambda r: -r["creditos"])
+        return filas[:top] if top else filas
+
+    cono_tot = g[["gestionada", "contacto", "rpc", "promesa"]].sum()
+    por_gestor = g.groupby("usuario").agg(gestiones=("credito", "size"), creditos=("credito", "nunique"),
+                                          contactos=("contacto", "sum"), rpc=("rpc", "sum"), promesas=("promesa", "sum"))
+    prom = g[g["promesa"] > 0]
+    return {
+        "fecha_corte": hoy.isoformat(),
+        "definiciones": {
+            "cosecha": "Créditos desembolsados en los últimos 24 meses (Loan Tape), una fila por crédito.",
+            "mora": "Tramo por días de mora hoy (MCCOLLECT): B0 al día, B1 1-30, B2 31-60, B3 61-90, B4 91-120, B5 121-150, "
+                    "B6 151-180, B7 más de 180; CANCELADO si el crédito ya no está en la cartera de cobro.",
+            "pct_mora_30": "Créditos en B2 a B7 sobre el total de créditos del grupo (incluye cancelados).",
+            "pct_mora_90": "Créditos en B4 a B7 sobre el total de créditos del grupo.",
+            "primeros_pagos": "Créditos cuya primera cuota vence en el mes en curso; 'vencidos' = la fecha de la primera cuota ya pasó.",
+            "cono": "Gestiones de cobro del mes en curso, una por gestión (sin la duplicación Admin/Legal del catálogo).",
+        },
+        "cosecha": {"total": _indicadores(b, None)[0],
+                    **{f"por_{d}": _indicadores(b, d) for d in dims_cosecha},
+                    "por_promotor_top40": _indicadores(b, "promotor", 40)},
+        "cartera_activa": {
+            "total": {"creditos": len(activa), "saldo": round(float(activa["saldo_doc"].sum()), 0)},
+            "por_mora": activa.groupby("mora").agg(creditos=("credito", "size"), saldo=("saldo_doc", "sum")).round(0).reset_index().to_dict("records"),
+            "por_rodamiento": activa["rodamiento"].value_counts().to_dict(),
+            "por_tipo_pago": activa["tipo_pago"].value_counts().to_dict(),
+            "por_pago_mes": activa["pago_mes"].value_counts().to_dict(),
+            "por_sucursal": _indicadores(activa, "sucursal"),
+            "por_producto": _indicadores(activa, "producto_comercial"),
+            "por_mes_desembolso": _indicadores(activa, "mes_desembolso"),
+        },
+        "primeros_pagos": {
+            "total": {"creditos": len(pp), "vencidos": len(venc), **pp["estado_primer_pago"].value_counts().to_dict()},
+            "por_sucursal": pp_por("sucursal"), "por_canal": pp_por("canal"), "por_producto": pp_por("producto_comercial"),
+            "por_promotor_top40": pp_por("promotor", 40), "por_clasificacion": pp_por("clasificacion"),
+        },
+        "cono": {
+            "total": {"gestiones": len(g), "creditos_gestionados": int(g["credito"].nunique()),
+                      **{k: int(v) for k, v in cono_tot.items()}},
+            "por_gestor_top40": por_gestor.sort_values("gestiones", ascending=False).head(40).reset_index().to_dict("records"),
+            "por_resultado_top25": g["descripcion_resultado"].value_counts().head(25).to_dict(),
+            "por_tipo_cartera": g.groupby("tipo_cartera").agg(gestiones=("credito", "size"), contactos=("contacto", "sum"),
+                                                              promesas=("promesa", "sum")).reset_index().to_dict("records"),
+            "promesas_por_estado": prom.groupby("estado_promesa", dropna=False).agg(
+                promesas=("credito", "size"), monto_prometido=("monto_promesa", "sum"),
+                monto_pagado=("monto_pagado", "sum")).round(0).reset_index().fillna("SIN DATO").to_dict("records"),
+        },
+    }
+
+
+# ---------- descarga ----------
+COLUMNAS_EXCEL = {  # orden y nombre de las columnas del Excel de descarga
+    "credito": "Crédito", "comprobante": "Comprobante", "numero": "Número", "nit": "NIT", "cedula_cliente": "Cédula",
+    "nombre_deudor": "Cliente", "genero": "Género", "edad": "Edad", "est_civil": "Estado civil", "profesion": "Profesión",
+    "ciudad": "Ciudad", "sucursal": "Sucursal", "nombre_centro": "Centro", "producto": "Producto", "nombre_mod": "Modalidad",
+    "producto_comercial": "Producto comercial", "producto_motor": "Producto motor", "fecha_renov": "Fecha desembolso",
+    "mes_desembolso": "Mes desembolso", "primera_cuota": "Primera cuota", "fecha_vence": "Fecha vence",
+    "numero_cuotas": "Plazo", "valor_cuota": "Valor cuota", "tasainteres": "Tasa", "monto_des": "Monto desembolsado",
+    "saldopagare": "Saldo pagaré inicial", "ncredxcliente": "Créditos del cliente", "dias_pago": "Día de pago",
+    "salario": "Salario", "tiempo_trabajo": "Tiempo trabajo (meses)", "dlo": "DLO",
+    "num_solicitud": "Solicitud", "tipo_credito": "Tipo crédito", "categorizacion": "Categorización",
+    "promotor": "Promotor", "cedula_promotor": "Cédula promotor", "tipo_promotor": "Tipo promotor", "canal": "Canal",
+    "sucursal_promotor": "Sucursal promotor", "analista": "Analista", "suc_origen": "Sucursal origen",
+    "medio_captacion": "Medio captación", "score": "Score", "fecha_aprobado": "Fecha aprobado",
+    "resultado_motor": "Resultado motor", "perfil_motor": "Perfil motor", "politica_hit": "Política HIT",
+    "ingreso_bruto": "Ingreso bruto", "capacidad_pago": "Capacidad de pago", "score_tun": "Score TUN",
+    "estabilidad_inss": "Estabilidad INSS", "edad_motor": "Edad motor",
+    "empleo_inss": "En base INSS", "empresa_inss": "Empresa INSS", "salario_inss": "Salario INSS",
+    "empleador_inss": "Código empleador", "primer_credito": "Primer crédito del cliente",
+    "dias_mora": "Días mora", "mora": "Mora", "saldo_doc": "Saldo", "cuotas_vencidas": "Cuotas vencidas",
+    "tipo_credito_legal": "Tipo crédito legal", "fecha_ult_pago": "Fecha último pago", "monto_ult_pago": "Monto último pago",
+    "fecha_proximo_pago": "Próximo pago", "tipo_pago": "Tipo de pago", "pago_mes": "Pago en el mes", "pago_antes": "Pago antes",
+    "empresa_cendoc": "Empresa Cendoc", "dealer": "Dealer", "centro_cendoc": "Centro Cendoc",
+    "cuotas_pagas": "Cuotas pagadas", "valor_vencido": "Valor vencido", "rodamiento": "Rodamiento", "cargo": "Cargo",
+    "intentos": "Intentos", "gestionada": "Gestionadas", "contacto": "Contactos", "rpc": "RPC", "promesa": "Promesas",
+    "ult_fecha_gestion": "Última gestión", "gestor": "Gestor", "ult_accion": "Última acción", "ult_resultado": "Último resultado",
+    "tipo_cartera": "Tipo cartera", "status_promesa_pago": "Status promesa", "fecha_promesa": "Fecha promesa",
+    "monto_promesa": "Monto promesa", "estado_promesa": "Estado promesa", "monto_pagado": "Monto pagado",
+    "antig_cliente": "Antigüedad cliente (meses)", "rango_antig_cliente": "Rango antigüedad cliente",
+    "antig_credito": "Antigüedad crédito (meses)", "rango_antig_credito": "Rango antigüedad crédito",
+    "clasificacion": "Clasificación", "rango_antig_laboral": "Rango antigüedad laboral", "rango_desembolso": "Rango desembolso",
+    "rango_edad": "Rango edad", "rango_salario": "Rango salario", "multiplicador": "Multiplicador",
+    "rango_multiplicador": "Rango multiplicador", "rango_ingreso": "Rango ingreso bruto",
+    "rango_capacidad": "Rango capacidad de pago", "rango_estabilidad": "Rango estabilidad INSS",
+    "rango_edad_motor": "Rango edad motor", "rango_score": "Rango score",
+    "primer_pago_mes": "Primera cuota este mes", "estado_primer_pago": "Estado primer pago",
+}
+
+
+def excel(b: pd.DataFrame) -> bytes:
+    df = b[[c for c in COLUMNAS_EXCEL if c in b]].rename(columns=COLUMNAS_EXCEL)
+    for c in df.columns:
+        if pd.api.types.is_datetime64_any_dtype(df[c]):
+            df[c] = df[c].dt.tz_localize(None) if getattr(df[c].dt, "tz", None) else df[c]
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as w:
+        df.to_excel(w, sheet_name="Cosecha", index=False, freeze_panes=(1, 1))
+    return buf.getvalue()
+
+
+def a_json(obj) -> bytes:
+    def conv(o):
+        if isinstance(o, (np.integer,)):
+            return int(o)
+        if isinstance(o, (np.floating,)):
+            return None if np.isnan(o) else float(o)
+        if isinstance(o, (pd.Timestamp, datetime, date)):
+            return o.isoformat()
+        return str(o)
+    return json.dumps(obj, ensure_ascii=False, separators=(",", ":"), default=conv).encode("utf-8")
+
+
+def comprimir(datos: bytes) -> bytes:
+    return gzip.compress(datos, compresslevel=9, mtime=0)
