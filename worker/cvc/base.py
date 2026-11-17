@@ -239,6 +239,47 @@ def construir(d: dict[str, pd.DataFrame], hoy: date | None = None) -> tuple[pd.D
     b["en_cartera"] = b["credito"].isin(cart.index)
     b["en_genesis"] = b["credito"].isin(gen.index)
 
+    # Bitácora de Atención (Excel de Genesis): solo los campos que no traen Genesis ni Loan Tape.
+    # Lo que ya viene de esas fuentes (solicitud, cédula, fechas de creación y aprobación, tipo de crédito, promotor,
+    # sucursal origen, categorización, medio de captación, montos, tasa, modalidad, cliente) no se repite.
+    if d.get("bitacora") is not None:
+        bt = d["bitacora"].drop_duplicates().copy()
+        bt = bt[num(bt["Consecutivo"]) > 0]
+        bt["credito"] = txt(bt["Comprobante"]) + " " + num(bt["Consecutivo"]).astype("Int64").astype(str)
+        bt = bt.sort_values("Fecha Aprobado", ascending=False).drop_duplicates("credito").set_index("credito")
+        bit = pd.DataFrame(index=bt.index)
+        bit["fecha_formalizado"] = fecha(bt["Fecha Formalizado"])
+        bit["fecha_auditado"] = fecha(bt["Fecha Auditado"])
+        # con las dos fechas de la bitácora, en días calendario: la bitácora trae la hora en formato de 12 h sin AM/PM
+        bit["dias_aprobado_formalizado"] = (bit["fecha_formalizado"].dt.normalize() - fecha(bt["Fecha Aprobado"]).dt.normalize()).dt.days
+        for dst, src in [("estado_expediente", "Estado"), ("nacionalidad", "Nacionalidad"), ("lugar_trabajo", "Lugar de Trabajo"),
+                         ("actividad_economica", "Profesion"), ("tipo_salario", "Tipo Salario"), ("area", "Area"),
+                         ("suc_dealer", "Suc Dealer"), ("vendedor", "Vendedor"), ("promociones", "Promociones"),
+                         ("excepcion", "Excepcion"), ("motivo_rechazo", "Motivo Rechazo"), ("tipo_desembolso", "Tipo Desembolso"),
+                         ("usuario_crea", "Usuario Crea"), ("usuario_aprobado", "Usuario Aprobado Informa"),
+                         ("usuario_formaliza", "Usuario Formaliza"), ("sucursal_formaliza", "Sucursal Formaliza"),
+                         ("usuario_audita", "Usuario Audita")]:
+            bit[dst] = txt(bt[src])
+        for dst, src in [("monto_aprobado_motor", "Aprobado_Motor"), ("razon_cuota_ingreso", "Razon Cuota Ingreso"),
+                         ("capacidad_pago_bitacora", "Capacidad Pago"), ("valor_garantia", "Valor de la Garantia"),
+                         ("prima", "Prima"), ("monto_financiar", "Monto a Financiar"), ("porcentaje_financiar", "Porcentaje a Financiar")]:
+            bit[dst] = num(bt[src])
+        b = b.join(bit, on="credito")
+        b["en_bitacora"] = b["credito"].isin(bit.index)
+        # Huecos de Genesis / Cendoc que la bitácora sí trae (mismo dato, no columna nueva)
+        k = b["credito"]
+        b["telefono"] = b["telefono"].fillna(k.map(txt(bt["Tel. Contacto"])))
+        b["analista"] = b["analista"].fillna(k.map(txt(bt["Analista"])))  # vacío en Genesis = "FLUJO RAPIDO" en la bitácora
+        dealer_bt = txt(bt["Dealer"]).where(lambda s: s.str.upper() != "SIN DEALER")
+        b["dealer"] = b["dealer"].fillna(k.map(dealer_bt))
+        # Dealer según Genesis (columna "Dealer" de la bitácora por número de solicitud, como el BUSCARV del usuario)
+        bs = d["bitacora"].assign(_sol=num(d["bitacora"]["Num Solicitud"])).sort_values("Fecha Aprobado", ascending=False)
+        bs = bs[bs["_sol"].notna()].drop_duplicates("_sol").set_index("_sol")
+        b["dealer_genesis"] = b["num_solicitud"].map(txt(bs["Dealer"]))
+    else:
+        b["en_bitacora"] = False
+        b["dealer_genesis"] = None
+
     # Empleados (base INSS) por cédula del cliente; si el Loan no la trae, la de Genesis
     em = d["empleados"].copy()
     em["cedula"] = cedula(em["cedula"])
@@ -289,6 +330,17 @@ def construir(d: dict[str, pd.DataFrame], hoy: date | None = None) -> tuple[pd.D
     b["rango_edad"] = tramos(b["edad"], C_EDADES, EDADES)
     b["rango_salario"] = rango_salario(b["salario"], b["producto"])
     b["producto_comercial"] = producto_comercial(b["nombre_mod"], b["producto"], b["salario"], b["saldopagare"])
+    # Producto Madre: MOTO y PREN = MOTO; PERS se abre en CONV y PENS según el producto comercial
+    pc = b["producto_comercial"]
+    b["producto_madre"] = elegir(
+        [b["producto"].isin(["MOTO", "PREN"]), b["producto"] == "PYME", (b["producto"] == "PERS") & (pc == "CONVENIO"),
+         (b["producto"] == "PERS") & (pc == "PENSIONADO"), b["producto"] == "PERS"],
+        ["MOTO", "PYME", "CONV", "PENS", "PERS"], "SIN DATO")
+    b["con_excepcion"] = np.where(b["excepcion"].notna(), "SI", "NO") if "excepcion" in b else "NO"
+    # Con Prima (solo MOTO): según el % financiado de la garantía (vacío cuenta como 0, igual que en Excel)
+    pf = b["porcentaje_financiar"].fillna(0) if "porcentaje_financiar" in b else pd.Series(0.0, index=b.index)
+    b["con_prima"] = elegir([pf == 100, pf >= 90, pf >= 80, pf < 80],
+                            ["NO", "10% o Menos", "Entre 20% y 10%", "SI"]).where(b["producto_madre"] == "MOTO", "NO APLICA")
     b["multiplicador"] = (b["saldopagare"] / b["salario"]).where(b["salario"] > 0)
     b["rango_multiplicador"] = tramos(b["multiplicador"], [-np.inf, 1, 2, 3, 4, 5, 6, 7],
                                       ["01. Menor a 1", "02. 1 - 1.99", "03. 2 - 2.99", "04. 3 - 3.99", "05. 4 - 4.99",
@@ -333,7 +385,8 @@ def construir(d: dict[str, pd.DataFrame], hoy: date | None = None) -> tuple[pd.D
               "genero", "producto", "tipo_credito_legal"]:
         b[c] = b[c].fillna("SIN DATO")
 
-    for fuente, col in [("Cartera", "en_cartera"), ("Genesis", "en_genesis"), ("Reglas Motor", "en_motor")]:
+    for fuente, col in [("Cartera", "en_cartera"), ("Genesis", "en_genesis"), ("Bitácora", "en_bitacora"),
+                        ("Reglas Motor", "en_motor")]:
         avisos.append(f"{fuente}: {int(b[col].sum()):,} de {len(b):,} créditos encontrados")
     avisos.append(f"Promotores: canal encontrado para {int(b['canal'].ne('SIN DATO').sum()):,} créditos")
     return b.reset_index(drop=True), g, avisos

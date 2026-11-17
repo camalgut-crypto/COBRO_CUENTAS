@@ -30,6 +30,10 @@ class Supabase:
     def leer(self, tabla: str, filtro: str = "") -> list[dict]:
         return self._ok(requests.get(f"{self.url}/rest/v1/{tabla}?select=*{filtro}", headers=self.h, timeout=60))
 
+    def insertar(self, tabla: str, datos: dict) -> dict:
+        h = {**self.h, "Prefer": "return=representation"}
+        return self._ok(requests.post(f"{self.url}/rest/v1/{tabla}", headers=h, json=datos, timeout=60))[0]
+
     def actualizar(self, tabla: str, filtro: str, datos: dict):
         return self._ok(requests.patch(f"{self.url}/rest/v1/{tabla}?{filtro}", headers=self.h, json=datos, timeout=60))
 

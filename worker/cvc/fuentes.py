@@ -55,6 +55,11 @@ def obtener(cfg: dict, forzar: set[str] | None = None, hoy: date | None = None) 
     datos, info = {}, {}
     for nombre, f in cfg["fuentes"].items():
         pkl = DATA / f"{nombre}.pkl"
+        if "excel" in f:  # fuente que se carga a mano como Excel en la carpeta del módulo
+            r = leer_excel(nombre, f, pkl, est, forzar)
+            if r is not None:
+                datos[nombre], info[nombre] = r
+            continue
         if toca(nombre, f["frecuencia"], hoy, dias, forzar):
             sql = (RAIZ / f["sql"]).read_text(encoding="utf-8-sig")
             for i in range(1, intentos + 1):
@@ -83,6 +88,32 @@ def obtener(cfg: dict, forzar: set[str] | None = None, hoy: date | None = None) 
         info[nombre] = {"fecha": est.get(nombre, {}).get("fecha"), "filas": len(datos[nombre]),
                         "frecuencia": f["frecuencia"]}
     return datos, info
+
+
+def leer_excel(nombre: str, f: dict, pkl: Path, est: dict, forzar: set[str]):
+    """Lee el Excel solo si cambió desde la última lectura (si no, usa la copia guardada).
+    Si el archivo no está, la carga sigue sin esta fuente y se avisa en el log."""
+    ruta = RAIZ / f["excel"]
+    previo = est.get(nombre, {})
+    if not ruta.exists():
+        if not pkl.exists():
+            logging.warning("%s: no está %s; la carga sigue sin esta fuente", nombre, ruta.name)
+            return None
+        logging.warning("%s: no está %s; se usa la copia guardada", nombre, ruta.name)
+        df = pd.read_pickle(pkl)
+    else:
+        modificado = datetime.fromtimestamp(ruta.stat().st_mtime).isoformat(timespec="seconds")
+        if pkl.exists() and previo.get("archivo_modificado") == modificado and nombre not in forzar and "todo" not in forzar:
+            df = pd.read_pickle(pkl)
+        else:
+            t0 = reloj.time()
+            df = pd.read_excel(ruta, sheet_name=f.get("hoja", 0))
+            logging.info("%s: %s filas leídas de %s (%.0f s)", nombre, f"{len(df):,}", ruta.name, reloj.time() - t0)
+            DATA.mkdir(parents=True, exist_ok=True)
+            df.to_pickle(pkl)
+            est[nombre] = previo = {"fecha": modificado, "filas": len(df), "archivo_modificado": modificado}
+            _guardar_estado(est)
+    return df, {"fecha": previo.get("fecha"), "filas": len(df), "frecuencia": "archivo Excel"}
 
 
 def desde_pickles(carpeta: Path) -> tuple[dict[str, pd.DataFrame], dict]:

@@ -88,6 +88,10 @@ create policy leer on public.cvc_actualizaciones for select to authenticated usi
 drop policy if exists pedir on public.cvc_actualizaciones;
 create policy pedir on public.cvc_actualizaciones for insert to authenticated
   with check (public.cvc_rol() is not null and estado = 'pendiente' and iniciado_en is null and terminado_en is null and mensaje is null);
+-- El proceso de carga registra sus cargas automáticas para que la app sepa que está ocupado
+drop policy if exists registrar on public.cvc_actualizaciones;
+create policy registrar on public.cvc_actualizaciones for insert to authenticated
+  with check (public.dac_rol() = 'sistema');
 drop policy if exists atender on public.cvc_actualizaciones;
 create policy atender on public.cvc_actualizaciones for update to authenticated
   using (public.dac_rol() = 'sistema') with check (true);

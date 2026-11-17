@@ -2,7 +2,7 @@
 # Credenciales SQL: las mismas de Loan Tape / Módulo PYME (Administrador de credenciales de Windows, "modulo_garantias_sql").
 # Credenciales Supabase: usuario "sistema" de Tiempos DAC (keyring "tiempos_dac_supabase").
 
-hora_diaria = "07:30"      # carga automática diaria (hora de la PC); el botón "Actualizar" la pide al momento
+hora_diaria = "08:20"      # carga automática diaria (hora de la PC); el botón "Actualizar" la pide al momento
 intentos = 3               # si una consulta falla se reintenta
 espera_minutos = 10        # entre intentos
 dias_empleados = [1, 13, 25]   # Empleados se refresca cada 12 días contando desde el 01 de cada mes
@@ -25,6 +25,8 @@ empleados     = { sql = "worker/sql/empleados.sql",     frecuencia = "empleados"
 cartera       = { sql = "worker/sql/cartera.sql",       frecuencia = "diaria" }
 cendoc        = { sql = "worker/sql/cendoc.sql",        frecuencia = "diaria" }
 gestiones     = { sql = "worker/sql/gestiones.sql",     frecuencia = "diaria" }
+# Bitácora de Atención: Excel exportado de Genesis y guardado en la carpeta del módulo; se vuelve a leer cuando el archivo cambia
+bitacora      = { excel = "Bitacora de Atencion Nicaragua.xlsx", hoja = "Genesis", frecuencia = "archivo" }
 
 [supabase]
 # Mismo proyecto que Tiempos DAC y Auditores; las tablas de este módulo llevan el prefijo cvc_

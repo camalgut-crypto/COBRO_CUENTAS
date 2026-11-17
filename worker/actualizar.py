@@ -15,6 +15,7 @@ import sys
 import time as reloj
 from datetime import date, datetime
 from pathlib import Path
+from urllib.parse import quote
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from cvc import base, fuentes, salidas  # noqa: E402
@@ -56,6 +57,13 @@ def actualizar_nube(cfg: dict, sb, pedido: int | None = None, forzar: set[str] |
     ahora = lambda: datetime.now().astimezone().isoformat()
     if pedido:
         sb.actualizar("cvc_actualizaciones", f"id=eq.{pedido}", {"estado": "procesando", "iniciado_en": ahora()})
+    else:
+        # La carga automática también queda registrada como "procesando" para que la app sepa que el proceso está ocupado
+        try:
+            pedido = sb.insertar("cvc_actualizaciones", {"solicitado_nombre": "Carga automática",
+                                                         "estado": "procesando", "iniciado_en": ahora()})["id"]
+        except Exception as e:
+            logging.warning("No se pudo registrar la carga automática en cvc_actualizaciones: %s", e)
     try:
         hoy = date.today()
         datos, info = fuentes.obtener(cfg, forzar, hoy)
@@ -71,6 +79,9 @@ def actualizar_nube(cfg: dict, sb, pedido: int | None = None, forzar: set[str] |
         logging.info(msg)
         if pedido:
             sb.actualizar("cvc_actualizaciones", f"id=eq.{pedido}", {"estado": "ok", "terminado_en": ahora(), "mensaje": msg})
+        # Los clics hechos mientras esta carga corría ya quedan atendidos con ella: no se repite la carga
+        sb.actualizar("cvc_actualizaciones", f"estado=eq.pendiente&solicitado_en=lt.{quote(ahora())}",
+                      {"estado": "ok", "terminado_en": ahora(), "mensaje": "Atendida con la actualización que estaba en curso"})
     except Exception as e:
         logging.exception("Error en la actualización")
         if pedido:
@@ -83,6 +94,13 @@ def escuchar(cfg: dict):
     from cvc.nube import Supabase
     hh, mm = (int(x) for x in cfg.get("hora_diaria", "07:30").split(":"))
     ultima_auto = None
+    try:  # si la PC se apagó a media carga, esa solicitud quedó "procesando" para siempre
+        Supabase(cfg["supabase"]).actualizar(
+            "cvc_actualizaciones", "estado=eq.procesando",
+            {"estado": "error", "terminado_en": datetime.now().astimezone().isoformat(),
+             "mensaje": "Interrumpida: el proceso se detuvo antes de terminar"})
+    except Exception:
+        logging.exception("No se pudieron cerrar las actualizaciones interrumpidas")
     while True:
         try:
             sb = Supabase(cfg["supabase"])  # token nuevo en cada vuelta: no caduca aunque quede días encendido

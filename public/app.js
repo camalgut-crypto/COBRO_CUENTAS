@@ -32,31 +32,38 @@ const M90 = new Set(['B4', 'B5', 'B6', 'B7']);
 // ---------- Dimensiones ----------
 const DIM = {
   sucursal: 'Sucursal', canal: 'Canal', sucursal_promotor: 'Sucursal promotor', promotor: 'Promotor',
-  producto_comercial: 'Producto', producto_motor: 'Producto motor', clasificacion: 'Clasificación',
+  producto_comercial: 'Producto comercial', producto_motor: 'Producto motor', clasificacion: 'Clasificación',
   categorizacion: 'Categorización', tipo_credito: 'Tipo de crédito', medio_captacion: 'Medio de captación',
   rango_score: 'Rango de score', rango_desembolso: 'Rango de desembolso', rango_salario: 'Rango de salario',
   rango_edad: 'Rango de edad', rango_multiplicador: 'Multiplicador', rango_antig_cliente: 'Antigüedad del cliente',
   rango_antig_credito: 'Antigüedad del crédito', rango_antig_laboral: 'Antigüedad laboral',
   rango_capacidad: 'Capacidad de pago', rango_ingreso: 'Ingreso bruto (motor)', rango_estabilidad: 'Estabilidad INSS',
   rango_edad_motor: 'Edad (motor)', perfil_motor: 'Perfil motor', politica_hit: 'Política HIT', genero: 'Género',
-  plazo: 'Plazo', empleo_inss: 'En base INSS', mes_desembolso: 'Mes de desembolso', mora: 'Tramo de mora',
-  rodamiento: 'Rodamiento', tipo_cartera: 'Tipo de cartera', tipo_pago: 'Tipo de pago', pago_mes: 'Pago en el mes',
+  plazo: 'Plazo', empleo_inss: 'En base INSS', mes_desembolso: 'Mes desembolso', mora: 'Mora Actual',
+  rodamiento: 'Rodamiento', tipo_cartera: 'Tipo cartera del cono', tipo_pago: 'Tipo de pago', pago_mes: 'Pago en el mes',
   estado_promesa: 'Estado de promesa', ult_resultado: 'Último resultado de gestión', gestor: 'Gestor',
-  estado_primer_pago: 'Estado del primer pago', tipo_credito_legal: 'Tipo crédito legal',
+  estado_primer_pago: 'Estado del primer pago', tipo_credito_legal: 'Tipo Cartera',
+  producto_madre: 'Producto Madre', resultado_motor: 'Resultado motor', status_promesa_pago: 'Status promesa',
+  dealer_genesis: 'Dealer', suc_dealer: 'Sucursal dealer', con_excepcion: 'Con Excepcion', con_prima: 'Con Prima',
+  dia_pago: 'Día de pago', tipo_salario: 'Tipo salario', primera_cuota: 'Primera cuota',
 };
-const FILTROS_PRINCIPALES = ['sucursal', 'canal', 'producto_comercial', 'clasificacion', 'rango_score', 'promotor'];
-const FILTROS_MAS = ['categorizacion', 'tipo_credito', 'sucursal_promotor', 'medio_captacion', 'rango_desembolso',
-  'rango_salario', 'rango_edad', 'rango_multiplicador', 'rango_antig_cliente', 'rango_antig_credito', 'rango_antig_laboral',
-  'rango_capacidad', 'rango_ingreso', 'rango_estabilidad', 'perfil_motor', 'politica_hit', 'producto_motor', 'plazo',
-  'genero', 'empleo_inss'];
-const FILTROS_COBRO = ['mora', 'rodamiento', 'tipo_cartera', 'tipo_pago', 'pago_mes', 'gestor', 'tipo_credito_legal'];
-const DIMS_VER_POR = ['sucursal', 'canal', 'producto_comercial', 'promotor', 'sucursal_promotor', 'clasificacion',
-  'categorizacion', 'rango_score', 'rango_desembolso', 'rango_salario', 'rango_edad', 'rango_capacidad', 'rango_ingreso',
-  'rango_antig_cliente', 'rango_antig_laboral', 'rango_multiplicador', 'perfil_motor', 'medio_captacion', 'plazo',
-  'tipo_credito', 'mes_desembolso', 'empleo_inss'];
+// Filtros definidos por Riesgo (17-nov-2026): los 7 primeros siempre visibles; desde Política HIT, en "Más filtros"
+const FILTROS_PRINCIPALES = ['producto_madre', 'clasificacion', 'producto_comercial', 'mes_desembolso', 'canal',
+  'sucursal_promotor', 'mora'];
+const FILTROS_MAS = ['politica_hit', 'tipo_credito_legal', 'tipo_salario', 'rango_antig_cliente', 'rango_antig_credito',
+  'rango_antig_laboral', 'rango_capacidad', 'rango_desembolso', 'rango_edad', 'rango_edad_motor', 'rango_estabilidad',
+  'rango_ingreso', 'rango_multiplicador', 'rango_salario', 'rango_score', 'resultado_motor', 'rodamiento',
+  'status_promesa_pago', 'dealer_genesis', 'suc_dealer', 'con_excepcion', 'con_prima', 'dia_pago', 'empleo_inss',
+  'medio_captacion'];
+const DIMS_VER_POR = ['sucursal', 'canal', 'producto_madre', 'producto_comercial', 'promotor', 'sucursal_promotor',
+  'clasificacion', 'categorizacion', 'rango_score', 'rango_desembolso', 'rango_salario', 'rango_edad', 'rango_capacidad',
+  'rango_ingreso', 'rango_antig_cliente', 'rango_antig_laboral', 'rango_multiplicador', 'perfil_motor', 'resultado_motor',
+  'politica_hit', 'medio_captacion', 'plazo', 'tipo_credito', 'tipo_credito_legal', 'tipo_salario', 'dealer_genesis',
+  'suc_dealer', 'con_excepcion', 'con_prima', 'dia_pago', 'mes_desembolso', 'empleo_inss'];
 const CONO_DIMS = { tipo_cartera: 'Tipo de cartera', usuario: 'Gestor', descripcion_accion: 'Acción', descripcion_resultado: 'Resultado', de_la_cosecha: 'Crédito de la cosecha' };
 
-const S = { perfil: null, tab: null, datos: {}, meta: null, f: {}, cono: {}, verPor: {}, tablaPor: {}, charts: {}, mas: false };
+const S = { perfil: null, tab: null, datos: {}, meta: null, f: {}, cono: {}, verPor: {}, tablaPor: {}, charts: {}, mas: false,
+  cerrados: {}, pivMed: 'spag', abierto: null, busca: '' };
 
 // ---------- Formatos ----------
 const nf = new Intl.NumberFormat('es-NI', { maximumFractionDigits: 0 });
@@ -157,13 +164,13 @@ async function bajar(tab) {
 const dv = (D, c, i) => { const k = D.datos[c]?.[i]; return k == null ? null : D.dic[c] ? D.dic[c][k] : k; };
 const mv = (D, c, i) => D.datos[c]?.[i] || 0;
 
-// Filas que pasan los filtros actuales
+// Filas que pasan los filtros actuales (un valor, o una lista de valores: p. ej. un grupo de tramos de mora)
 function filas(D, filtros, desde, hasta) {
   const conds = [];
   for (const [c, v] of Object.entries(filtros)) {
     if (!v || !D.dic[c]) continue;
-    const k = D.dic[c].indexOf(v);
-    conds.push([D.datos[c], k]);
+    const ks = new Set((Array.isArray(v) ? v : [v]).map(x => D.dic[c].indexOf(x)));
+    conds.push([D.datos[c], ks]);
   }
   let mesOk = null;
   if ((desde || hasta) && D.dic.mes_desembolso) {
@@ -172,7 +179,7 @@ function filas(D, filtros, desde, hasta) {
   const out = [];
   for (let i = 0; i < D.n; i++) {
     let pasa = true;
-    for (const [col, k] of conds) if (col[i] !== k) { pasa = false; break; }
+    for (const [col, ks] of conds) if (!ks.has(col[i])) { pasa = false; break; }
     if (pasa && mesOk && !mesOk.has(D.datos.mes_desembolso[i])) pasa = false;
     if (pasa) out.push(i);
   }
@@ -192,10 +199,10 @@ function agrupar(D, idx, dim, nuevo, sumar) {
 }
 
 // ---------- Indicadores de crédito ----------
-const accCred = D => [() => ({ n: 0, monto: 0, act: 0, saldo: 0, b0: 0, m30: 0, m90: 0, s30: 0, desm: 0, pagoMes: 0, grupos: [0, 0, 0, 0, 0, 0], sgrupos: [0, 0, 0, 0, 0, 0] }),
+const accCred = D => [() => ({ n: 0, monto: 0, spag: 0, act: 0, saldo: 0, b0: 0, m30: 0, m90: 0, s30: 0, desm: 0, pagoMes: 0, grupos: [0, 0, 0, 0, 0, 0], sgrupos: [0, 0, 0, 0, 0, 0], pgrupos: [0, 0, 0, 0, 0, 0] }),
   (a, i) => {
-    const mora = dv(D, 'mora', i), s = mv(D, 'saldo_doc', i), g = MORA_A_GRUPO[mora] ?? 5;
-    a.n++; a.monto += mv(D, 'monto_des', i); a.grupos[g]++; a.sgrupos[g] += s;
+    const mora = dv(D, 'mora', i), s = mv(D, 'saldo_doc', i), g = MORA_A_GRUPO[mora] ?? 5, p = mv(D, 'saldopagare', i);
+    a.n++; a.monto += mv(D, 'monto_des', i); a.spag += p; a.grupos[g]++; a.sgrupos[g] += s; a.pgrupos[g] += p;
     if (mora !== 'CANCELADO') { a.act++; a.saldo += s; }
     if (mora === 'B0') a.b0++;
     if (M30.has(mora)) { a.m30++; a.s30 += s; }
@@ -204,12 +211,12 @@ const accCred = D => [() => ({ n: 0, monto: 0, act: 0, saldo: 0, b0: 0, m30: 0, 
     const pm = dv(D, 'pago_mes', i);
     if (pm && pm !== 'Sin pago este mes') a.pagoMes++;
   }];
-const accPP = D => [() => ({ n: 0, venc: 0, pago: 0, mora: 0, sinpago: 0, porvencer: 0, canc: 0 }),
+const PP_CLAVE = { 'Pagó': 'pago', 'En mora': 'mora', 'Vencida sin pago registrado': 'sinpago', 'Por vencer': 'porvencer', 'Cancelado': 'canc' };
+const accPP = D => [() => ({ n: 0, spag: 0, venc: 0, pago: 0, mora: 0, sinpago: 0, porvencer: 0, canc: 0, s: {} }),
   (a, i) => {
-    const e = dv(D, 'estado_primer_pago', i);
-    a.n++;
-    if (e === 'Pagó') a.pago++; else if (e === 'En mora') a.mora++; else if (e === 'Vencida sin pago registrado') a.sinpago++;
-    else if (e === 'Por vencer') a.porvencer++; else if (e === 'Cancelado') a.canc++;
+    const e = dv(D, 'estado_primer_pago', i), k = PP_CLAVE[e], p = mv(D, 'saldopagare', i);
+    a.n++; a.spag += p;
+    if (k) { a[k]++; a.s[k] = (a.s[k] || 0) + p; }
     if (e !== 'Por vencer') a.venc++;
   }];
 
@@ -227,35 +234,109 @@ function pintarFiltros(D) {
       + Object.entries(CONO_DIMS).map(([c, t]) => sel(c, t, opciones(G, c), S.cono[c]).replace('data-f=', 'data-c=')).join('')
       + '<div class="acciones-f"><button type="button" class="btn lin mini" id="limpiar">Limpiar filtros</button></div>';
     $('filtrosMas').hidden = true;
+    pintarChips();
     return;
   }
-  const meses = (D.dic.mes_desembolso || []).slice().sort();
-  const mesSel = (k, t, vacio) => `<label class="${S.f[k] ? 'activo' : ''}">${t}<select data-f="${k}"><option value="">${vacio}</option>${meses.map(m => `<option value="${m}"${m === S.f[k] ? ' selected' : ''}>${fMes(m)}</option>`).join('')}</select></label>`;
-  const extra = S.tab === 'cartera_activa' || S.tab === 'primeros_pagos' ? FILTROS_COBRO.filter(c => D.dic[c]) : [];
-  $('filtros').innerHTML = (S.tab === 'primeros_pagos' ? '' : mesSel('_desde', 'Cosecha desde', 'Primera') + mesSel('_hasta', 'Cosecha hasta', 'Última'))
-    + FILTROS_PRINCIPALES.filter(c => D.dic[c]).map(c => c === 'promotor'
-      ? `<label class="${S.f.promotor ? 'activo' : ''}">Promotor<input list="lpromotor" data-f="promotor" value="${esc(S.f.promotor || '')}" placeholder="Todos"><datalist id="lpromotor">${opciones(D, 'promotor').map(v => `<option value="${esc(v)}">`).join('')}</datalist></label>`
-      : sel(c, DIM[c], opciones(D, c), S.f[c])).join('')
+  // Selección múltiple: botón con lo elegido y panel con casillas (y buscador si la lista es larga)
+  const selD = c => {
+    const vals = c === 'mes_desembolso' ? (D.dic[c] || []).slice().sort().reverse() : opciones(D, c);
+    const fmt = c === 'mes_desembolso' ? fMes : v => v;
+    const elegidos = S.f[c] || [];
+    const txt = !elegidos.length ? 'Todos' : elegidos.length === 1 ? fmt(elegidos[0]) : `${elegidos.length} seleccionados`;
+    const abierto = S.abierto === c;
+    const q = (S.busca || '').toLowerCase();
+    const panel = !abierto ? '' : `<div class="mpanel">${vals.length > 8 ? `<input class="mbusca" placeholder="Buscar…" value="${esc(S.busca || '')}">` : ''}`
+      + `<div class="macc"><button type="button" data-mvis="${c}">Marcar los visibles</button><button type="button" data-mtodos="${c}">Todos (quitar filtro)</button></div>`
+      + `<div class="mlista">${vals.map(v => `<label class="mop"${q && !String(fmt(v)).toLowerCase().includes(q) ? ' hidden' : ''}><input type="checkbox" data-mval="${esc(v)}"${elegidos.includes(v) ? ' checked' : ''}> ${esc(fmt(v))}</label>`).join('')}</div></div>`;
+    return `<div class="multi${elegidos.length ? ' activo' : ''}" data-multi="${c}"><span class="lbl">${DIM[c]}</span><button type="button" class="mbtn" title="${esc(elegidos.map(fmt).join(', '))}">${esc(txt)}</button>${panel}</div>`;
+  };
+  $('filtros').innerHTML = FILTROS_PRINCIPALES.filter(c => D.dic[c]).map(selD).join('')
     + `<div class="acciones-f"><button type="button" class="btn lin mini" id="verMas">${S.mas ? 'Menos filtros' : 'Más filtros'}</button><button type="button" class="btn lin mini" id="limpiar">Limpiar filtros</button></div>`;
   $('filtrosMas').hidden = !S.mas;
-  $('filtrosMas').innerHTML = [...extra, ...FILTROS_MAS].filter(c => D.dic[c]).map(c => sel(c, DIM[c], opciones(D, c), S.f[c])).join('');
+  $('filtrosMas').innerHTML = FILTROS_MAS.filter(c => D.dic[c]).map(selD).join('');
+  pintarChips();
 }
 
+// Filtros aplicados: los de las listas y los que vienen de hacer clic en un gráfico (grupo de mora, día, estado…)
 function filtrosActivos() {
   const f = {};
-  for (const [k, v] of Object.entries(S.f)) if (v && !k.startsWith('_')) f[k] = v;
+  for (const [k, v] of Object.entries(S.f)) if (v && !k.startsWith('_') && !(Array.isArray(v) && !v.length)) f[k] = v;
+  if (S.f._grupo != null && !f.mora) f.mora = Object.keys(MORA_A_GRUPO).filter(m => MORA_A_GRUPO[m] === S.f._grupo);
   return f;
 }
 
+const nomFiltro = k => (k === '_grupo' ? 'Mora Actual' : k === 'desde' ? 'Desde' : k === 'hasta' ? 'Hasta' : DIM[k] || CONO_DIMS[k] || k);
+const valFiltro = (k, v) => (Array.isArray(v) ? v.map(x => valFiltro(k, x)).join(', ') : k === '_grupo' ? MORA_GRUPOS[v] : k === 'mes_desembolso' ? fMes(v) : ['primera_cuota', 'desde', 'hasta', 'dia'].includes(k) ? fDia(v) : v);
+
+function pintarChips() {
+  const F = S.tab === 'cono' ? S.cono : S.f;
+  const act = Object.entries(F).filter(([, v]) => v != null && v !== '' && !(Array.isArray(v) && !v.length));
+  $('chips').hidden = !act.length;
+  $('chips').innerHTML = act.length ? '<span class="small muted">Filtrando por:</span>'
+    + act.map(([k, v]) => `<button type="button" class="chipf" data-quitar="${esc(k)}" title="Quitar este filtro">${esc(nomFiltro(k))}: <b>${esc(valFiltro(k, v))}</b> ✕</button>`).join('')
+    + '<span class="small muted">· Clic en una barra o punto de un gráfico para filtrar; otro clic en el mismo lo quita.</span>' : '';
+}
+
+// Clic en un gráfico: aplica sus valores como filtro a toda la pestaña; si ya estaban aplicados, los quita
+function filtrarDesdeGrafico(valores) {
+  const cono = S.tab === 'cono';
+  const F = cono ? S.cono : S.f;
+  const lista = k => !cono && !k.startsWith('_');   // fuera del cono los filtros son listas (selección múltiple)
+  const igual = (k, v) => (lista(k) ? Array.isArray(F[k]) && F[k].length === 1 && F[k][0] === v : F[k] === v);
+  const ya = Object.entries(valores).every(([k, v]) => igual(k, v));
+  for (const [k, v] of Object.entries(valores)) {
+    if (ya) delete F[k]; else F[k] = lista(k) ? [v] : v;
+    if (k === 'mora') delete F._grupo;
+    if (k === '_grupo') delete F.mora;
+  }
+  pintar();
+}
+
+function multiCambio(c, vals) {
+  if (vals.length) S.f[c] = vals; else delete S.f[c];
+  if (c === 'mora') delete S.f._grupo;
+  pintar();
+}
+
+document.addEventListener('input', e => {
+  if (!e.target.classList.contains('mbusca')) return;
+  S.busca = e.target.value;
+  const q = S.busca.toLowerCase();
+  e.target.closest('.mpanel').querySelectorAll('.mop').forEach(l => { l.hidden = q && !l.textContent.toLowerCase().includes(q); });
+});
+
 document.addEventListener('change', e => {
   const t = e.target;
-  if (t.dataset.f !== undefined) { S.f[t.dataset.f] = t.value; pintar(); }
+  if (t.dataset.mval !== undefined) {
+    const c = t.closest('[data-multi]').dataset.multi, act = new Set(S.f[c] || []);
+    if (t.checked) act.add(t.dataset.mval); else act.delete(t.dataset.mval);
+    return multiCambio(c, [...act]);
+  }
+  if (t.dataset.f !== undefined) { S.f[t.dataset.f] = t.value; if (t.dataset.f === 'mora') delete S.f._grupo; pintar(); }
   else if (t.dataset.c !== undefined) { S.cono[t.dataset.c] = t.value; pintar(); }
   else if (t.dataset.verpor !== undefined) { S.verPor[t.dataset.verpor] = t.value; pintar(); }
+  else if (t.id === 'pivMed') { S.pivMed = t.value; pintar(); }
 });
 document.addEventListener('click', e => {
+  const btn = e.target.closest('.mbtn');
+  if (btn) { const c = btn.closest('[data-multi]').dataset.multi; S.abierto = S.abierto === c ? null : c; S.busca = ''; pintarFiltros(S.datos[S.tab]); }
+  else if (S.abierto && !e.target.closest('.multi')) { S.abierto = null; S.busca = ''; pintarFiltros(S.datos[S.tab]); }
+  const mt = e.target.closest('[data-mtodos]');
+  if (mt) multiCambio(mt.dataset.mtodos, []);
+  const mvis = e.target.closest('[data-mvis]');
+  if (mvis) {
+    const c = mvis.dataset.mvis, act = new Set(S.f[c] || []);
+    mvis.closest('.mpanel').querySelectorAll('.mop:not([hidden]) input').forEach(i => act.add(i.dataset.mval));
+    multiCambio(c, [...act]);
+  }
   if (e.target.id === 'limpiar') { if (S.tab === 'cono') S.cono = {}; else S.f = {}; pintar(); }
   if (e.target.id === 'verMas') { S.mas = !S.mas; pintar(); }
+  const q = e.target.closest('[data-quitar]');
+  if (q) { delete (S.tab === 'cono' ? S.cono : S.f)[q.dataset.quitar]; pintar(); }
+  const anio = e.target.closest('[data-anio]');
+  if (anio) { const k = `${S.tab}_${anio.dataset.anio}`; S.cerrados[k] = !S.cerrados[k]; pintar(); }
+  const celda = e.target.closest('[data-pmes]');
+  if (celda) filtrarDesdeGrafico(celda.dataset.pmora ? { mes_desembolso: celda.dataset.pmes, mora: celda.dataset.pmora } : { mes_desembolso: celda.dataset.pmes });
 });
 
 // ---------- Gráficos ----------
@@ -288,15 +369,27 @@ const pluginEtiquetas = {
 Chart.register(pluginEtiquetas);
 
 function tarjeta(id, titulo, nota, { ancho = false, alto = false, verPor = null, leyenda = null } = {}) {
-  const sel = verPor ? `<label class="small">Ver por <select data-verpor="${id}">${DIMS_VER_POR.filter(d => verPor.D.dic[d]).map(d => `<option value="${d}"${d === verPor.valor ? ' selected' : ''}>${DIM[d]}</option>`).join('')}</select></label>` : '';
+  // data-verpor = la clave que lee la pestaña (antes se guardaba con el id del gráfico y el cambio no se veía)
+  const sel = verPor ? `<label class="small">Ver por <select data-verpor="${verPor.id}">${DIMS_VER_POR.filter(d => verPor.D.dic[d]).map(d => `<option value="${d}"${d === verPor.valor ? ' selected' : ''}>${DIM[d]}</option>`).join('')}</select></label>` : '';
   const ley = leyenda ? `<div class="leyenda">${leyenda.map(([t, c]) => `<span><i style="background:${c}"></i>${esc(t)}</span>`).join('')}</div>` : '';
   return `<article class="graf${ancho ? ' ancho' : ''}${alto ? ' alto' : ''}"><div class="cab"><h3>${titulo}</h3>${sel}</div>${nota ? `<p class="nota">${nota}</p>` : ''}${ley}<div class="lienzo"><canvas id="${id}"></canvas></div></article>`;
 }
 
-function grafico(id, cfg) {
+// clic(índice, serie) → {dimensión: valor} que se aplica como filtro a toda la pestaña (gráficos dinámicos)
+function grafico(id, cfg, clic = null) {
   S.charts[id]?.destroy();
   const el = $(id);
   if (!el) return;
+  if (clic) {
+    cfg.options.onClick = (ev, els, chart) => {
+      if (!els.length) return;
+      // la serie exacta bajo el puntero (en barras apiladas el tooltip abarca toda la columna); si no hay, solo la categoría
+      const exacto = chart.getElementsAtEventForMode(ev.native || ev, 'nearest', { intersect: true }, true)[0];
+      const f = clic(els[0].index, exacto ? exacto.datasetIndex : null);
+      if (f) setTimeout(() => filtrarDesdeGrafico(f));   // después de que Chart.js termine su evento (el gráfico se vuelve a crear)
+    };
+    cfg.options.onHover = (ev, els) => { ev.native.target.style.cursor = els.length ? 'pointer' : 'default'; };
+  }
   S.charts[id] = new Chart(el, cfg);
 }
 
@@ -306,16 +399,19 @@ function ejes({ horizontal = false, apilado = false, fmtValor = fN, max = undefi
   return horizontal ? { x: valor, y: cat } : { x: cat, y: valor };
 }
 
-function tooltipCfg(fmt, extra) {
+// etiqueta(c): texto propio por serie (cantidad, monto y % del total); extra(items): líneas al pie
+function tooltipCfg(fmt, extra, etiqueta = null) {
   return {
-    backgroundColor: '#fff', titleColor: '#06255B', bodyColor: '#333740', borderColor: '#D9DDE4', borderWidth: 1, padding: 10,
-    titleFont: { weight: 'bold' }, bodyFont: { size: 12 }, usePointStyle: true, boxWidth: 8, boxHeight: 2,
-    callbacks: { label: c => `${fmt(c.raw, c)}  ${c.dataset.label || ''}`, afterBody: extra },
+    backgroundColor: '#fff', titleColor: '#06255B', bodyColor: '#333740', footerColor: '#333740', borderColor: '#D9DDE4', borderWidth: 1, padding: 10,
+    titleFont: { weight: 'bold' }, bodyFont: { size: 12 }, footerFont: { size: 12, weight: 'normal' }, usePointStyle: true, boxWidth: 8, boxHeight: 2,
+    callbacks: { label: etiqueta || (c => `${fmt(c.raw, c)}  ${c.dataset.label || ''}`), footer: extra ? items => (items.length ? extra(items) : '') : undefined },
   };
 }
+// Texto de tooltip: cantidad · monto · % del total
+const tipCMP = (n, monto, totN, u = 'créditos') => [`${fN(n)} ${u} · ${fM(monto)}`, `${fP(pct(n, totN))} del total`];
 
 // Barras simples (una serie): horizontal para rankings por dimensión, vertical para categorías ordenadas
-function barrasSimples(id, etiquetas, valores, { color = SERIE[1], horizontal = true, fmt = fN, extra = null, max } = {}) {
+function barrasSimples(id, etiquetas, valores, { color = SERIE[1], horizontal = true, fmt = fN, extra = null, max, clic = null } = {}) {
   grafico(id, {
     type: 'bar',
     data: { labels: etiquetas, datasets: [{ data: valores, fmtEtiqueta: fmt, backgroundColor: color, borderRadius: 4, borderSkipped: 'start', maxBarThickness: 24, categoryPercentage: 0.8 }] },
@@ -325,46 +421,48 @@ function barrasSimples(id, etiquetas, valores, { color = SERIE[1], horizontal = 
       scales: ejes({ horizontal, fmtValor: fmt, max }),
       plugins: { legend: { display: false }, tooltip: tooltipCfg(fmt, extra), etiquetas: { mostrar: true } },
     },
-  });
+  }, clic);
 }
 
 // Barras apiladas (varias series de la misma unidad)
-function barrasApiladas(id, etiquetas, series, { horizontal = false, fmt = fN, cien = false, extra = null } = {}) {
+function barrasApiladas(id, etiquetas, series, { horizontal = false, fmt = fN, cien = false, extra = null, etiqueta = null, clic = null, todas = false } = {}) {
+  const scales = ejes({ horizontal, apilado: true, fmtValor: cien ? v => `${v}%` : fmt, max: cien ? 100 : undefined });
+  if (todas) (horizontal ? scales.y : scales.x).ticks.autoSkip = false;   // todas las etiquetas (p. ej. cada día del mes)
   grafico(id, {
     type: 'bar',
     data: { labels: etiquetas, datasets: series.map(s => ({ label: s.t, data: s.v, backgroundColor: s.c, borderColor: '#fff', borderWidth: horizontal ? { right: 2 } : { top: 2 }, borderSkipped: false, maxBarThickness: 28, categoryPercentage: 0.8 })) },
     options: {
       indexAxis: horizontal ? 'y' : 'x', responsive: true, maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
-      scales: ejes({ horizontal, apilado: true, fmtValor: cien ? v => `${v}%` : fmt, max: cien ? 100 : undefined }),
-      plugins: { legend: { display: false }, tooltip: tooltipCfg(cien ? v => fP(v) : fmt, extra) },
+      scales,
+      plugins: { legend: { display: false }, tooltip: { ...tooltipCfg(cien ? v => fP(v) : fmt, extra, etiqueta), filter: c => c.raw != null && c.raw !== 0 } },
     },
-  });
+  }, clic);
 }
 
 // Líneas (misma unidad, un solo eje)
-function lineas(id, etiquetas, series, { fmt = fN } = {}) {
+function lineas(id, etiquetas, series, { fmt = fN, extra = null, etiqueta = null, clic = null } = {}) {
   grafico(id, {
     type: 'line',
     data: { labels: etiquetas, datasets: series.map(s => ({ label: s.t, data: s.v, borderColor: s.c, backgroundColor: s.c, borderWidth: 2, pointRadius: 4, pointHoverRadius: 6, pointBorderColor: '#fff', pointBorderWidth: 2, tension: 0.25, spanGaps: true })) },
     options: {
       responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
       scales: ejes({ fmtValor: fmt }),
-      plugins: { legend: { display: false }, tooltip: tooltipCfg(fmt) },
+      plugins: { legend: { display: false }, tooltip: tooltipCfg(fmt, extra, etiqueta) },
     },
-  });
+  }, clic);
 }
 
 // Barras agrupadas (dos series de la misma unidad)
-function barrasAgrupadas(id, etiquetas, series, { fmt = fN } = {}) {
+function barrasAgrupadas(id, etiquetas, series, { fmt = fN, extra = null, clic = null } = {}) {
   grafico(id, {
     type: 'bar',
     data: { labels: etiquetas, datasets: series.map(s => ({ label: s.t, data: s.v, backgroundColor: s.c, borderRadius: 4, borderSkipped: 'start', maxBarThickness: 20, categoryPercentage: 0.75, barPercentage: 0.9 })) },
     options: {
       responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-      scales: ejes({ fmtValor: fmt }), plugins: { legend: { display: false }, tooltip: tooltipCfg(fmt) },
+      scales: ejes({ fmtValor: fmt }), plugins: { legend: { display: false }, tooltip: tooltipCfg(fmt, extra) },
     },
-  });
+  }, clic);
 }
 
 function kpis(lista) {
@@ -392,9 +490,50 @@ function tabla(titulo, opcionesPor, por, columnas, m, total) {
     + (total ? `<tr class="total"><td>Total</td>${columnas.map(c => celda(c, total)).join('')}</tr>` : '');
 }
 
+// ---------- Cuadro mes de desembolso × tramo de mora (como la tabla dinámica de Excel) ----------
+const TRAMOS = ['B0', 'B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'CANCELADO'];
+const PIV_MED = { spag: 'Saldo pagaré inicial', n: 'Cantidad de créditos', saldo: 'Saldo actual', pct: '% del saldo pagaré del mes' };
+
+function pivote(D, idx, titulo) {
+  const caja = $('pivCaja');
+  caja.hidden = !veTablas();
+  if (caja.hidden) return;
+  const m = new Map(), tot = {};
+  const nuevo = () => Object.fromEntries(TRAMOS.map(t => [t, { n: 0, spag: 0, saldo: 0 }]));
+  for (const i of idx) {
+    const mes = dv(D, 'mes_desembolso', i), t = dv(D, 'mora', i);
+    if (!mes || !TRAMOS.includes(t)) continue;
+    if (!m.has(mes)) m.set(mes, nuevo());
+    const c = m.get(mes)[t];
+    c.n++; c.spag += mv(D, 'saldopagare', i); c.saldo += mv(D, 'saldo_doc', i);
+  }
+  const cols = TRAMOS.filter(t => [...m.values()].some(r => r[t].n));
+  const sumar = filasR => { const s = nuevo(); for (const r of filasR) for (const t of TRAMOS) for (const k of ['n', 'spag', 'saldo']) s[t][k] += r[t][k]; return s; };
+  const totalFila = r => cols.reduce((a, t) => ({ n: a.n + r[t].n, spag: a.spag + r[t].spag, saldo: a.saldo + r[t].saldo }), { n: 0, spag: 0, saldo: 0 });
+  const general = sumar([...m.values()]), tg = totalFila(general);
+  const med = S.pivMed;
+  const valor = (c, fila) => (med === 'pct' ? pct(c.spag, fila.spag) : c[med]);
+  const fmt = v => (med === 'pct' ? fP(v) : v ? (med === 'n' ? fN(v) : v.toLocaleString('es-NI', { minimumFractionDigits: 2, maximumFractionDigits: 2 })) : '');
+  const tip = c => `${fN(c.n)} créditos · ${fM(c.spag)} saldo pagaré · ${fP(pct(c.spag, tg.spag))} del total`;
+  const celdas = (r, mes) => { const tf = totalFila(r); return cols.map(t => `<td class="num${mes ? ' clic' : ''}"${mes ? ` data-pmes="${mes}" data-pmora="${t}"` : ''} title="${esc(tip(r[t]))}">${r[t].n ? fmt(valor(r[t], tf)) : ''}</td>`).join('')
+    + `<td class="num tot" title="${esc(tip(tf))}">${fmt(med === 'pct' ? 100 : tf[med])}</td>`; };
+  const anios = [...new Set([...m.keys()].map(k => k.slice(0, 4)))].sort();
+  let cuerpo = '';
+  for (const a of anios) {
+    const meses = [...m.keys()].filter(k => k.startsWith(a)).sort();
+    const cerrado = S.cerrados[`${S.tab}_${a}`];
+    cuerpo += `<tr class="anio"><td data-anio="${a}" class="clic">${cerrado ? '⊞' : '⊟'} ${a}</td>${celdas(sumar(meses.map(k => m.get(k))))}</tr>`;
+    if (!cerrado) cuerpo += meses.map(k => `<tr><td class="mes clic" data-pmes="${k}" title="Filtrar por este mes">${MESES[+k.slice(5) - 1]}</td>${celdas(m.get(k), k)}</tr>`).join('');
+  }
+  $('pivTit').textContent = titulo;
+  $('pivMed').innerHTML = Object.entries(PIV_MED).map(([k, t]) => `<option value="${k}"${k === med ? ' selected' : ''}>${t}</option>`).join('');
+  $('pivHead').innerHTML = `<tr><th>Mes de desembolso</th>${cols.map(t => `<th class="num">${t}</th>`).join('')}<th class="num">Total general</th></tr>`;
+  $('pivBody').innerHTML = cuerpo + `<tr class="total"><td>Total general</td>${celdas(general)}</tr>`;
+}
+
 // ---------- Pestaña Cosecha ----------
 function pintarCosecha(D) {
-  const idx = filas(D, filtrosActivos(), S.f._desde, S.f._hasta);
+  const idx = filas(D, filtrosActivos());
   const [n0, sm] = accCred(D);
   const tot = agrupar(D, idx, null, n0, sm).get('Total') || n0();
   kpis([
@@ -413,20 +552,36 @@ function pintarCosecha(D) {
     + tarjeta('gCosechaDim', 'Mora 30+ por grupo', 'Los 15 grupos con más créditos (mínimo 30), ordenados por porcentaje de mora 30+.', { ancho: true, alto: true, verPor: { id: 'cosecha_dim', D, valor: vp } });
   const porMes = agrupar(D, idx, 'mes_desembolso', n0, sm);
   const meses = [...porMes.keys()].sort();
-  barrasApiladas('gCosechaMora', meses.map(fMes), MORA_GRUPOS.map((t, g) => ({ t, c: MORA_COLOR[g], v: meses.map(m => pct(porMes.get(m).grupos[g], porMes.get(m).n)) })),
-    { cien: true, extra: items => `${fN(porMes.get(meses[items[0].dataIndex]).n)} créditos en la cosecha` });
+  const am = k => porMes.get(meses[k]);
+  barrasApiladas('gCosechaMora', meses.map(fMes), MORA_GRUPOS.map((t, g) => ({ t, c: MORA_COLOR[g], v: meses.map(m => pct(porMes.get(m).grupos[g], porMes.get(m).n)) })), {
+    cien: true,
+    etiqueta: c => { const a = am(c.dataIndex), g = c.datasetIndex; return `${c.dataset.label}: ${fP(c.raw)} · ${fN(a.grupos[g])} créditos · ${fM(a.pgrupos[g])} · ${fP(pct(a.grupos[g], tot.n))} del total`; },
+    extra: it => { const a = am(it[0].dataIndex); return ['Cosecha: ' + tipCMP(a.n, a.spag, tot.n).join(' · ')]; },
+    clic: (k, g) => (g == null ? { mes_desembolso: meses[k] } : { mes_desembolso: meses[k], _grupo: g }),
+  });
   lineas('gCosechaPct', meses.map(fMes), [
     { t: 'Mora 30+', c: SERIE[2], v: meses.map(m => pct(porMes.get(m).m30, porMes.get(m).n)) },
     { t: 'Mora 90+', c: SERIE[1], v: meses.map(m => pct(porMes.get(m).m90, porMes.get(m).n)) },
-  ], { fmt: fP });
-  const clas = agrupar(D, idx, 'mes_desembolso', () => ({ NUEVO: 0, RENOVACION: 0 }), (a, i) => { a[dv(D, 'clasificacion', i)]++; });
-  barrasApiladas('gCosechaVol', meses.map(fMes), [
-    { t: 'Nuevo', c: SERIE[0], v: meses.map(m => clas.get(m).NUEVO) },
-    { t: 'Renovación', c: SERIE[1], v: meses.map(m => clas.get(m).RENOVACION) },
-  ]);
+  ], {
+    fmt: fP,
+    etiqueta: c => { const a = am(c.dataIndex), n = c.datasetIndex ? a.m90 : a.m30; return `${c.dataset.label}: ${fP(c.raw)} (${fN(n)} créditos)`; },
+    extra: it => tipCMP(am(it[0].dataIndex).n, am(it[0].dataIndex).spag, tot.n),
+    clic: k => ({ mes_desembolso: meses[k] }),
+  });
+  const clas = agrupar(D, idx, 'mes_desembolso', () => ({ NUEVO: { n: 0, p: 0 }, RENOVACION: { n: 0, p: 0 } }), (a, i) => { const c = a[dv(D, 'clasificacion', i)]; if (c) { c.n++; c.p += mv(D, 'saldopagare', i); } });
+  const CLAS = [['Nuevo', 'NUEVO', SERIE[0]], ['Renovación', 'RENOVACION', SERIE[1]]];
+  barrasApiladas('gCosechaVol', meses.map(fMes), CLAS.map(([t, k, c]) => ({ t, c, v: meses.map(m => clas.get(m)[k].n) })), {
+    etiqueta: c => { const x = clas.get(meses[c.dataIndex])[CLAS[c.datasetIndex][1]]; return `${c.dataset.label}: ${fN(x.n)} créditos · ${fM(x.p)} · ${fP(pct(x.n, tot.n))} del total`; },
+    extra: it => ['Mes: ' + tipCMP(am(it[0].dataIndex).n, am(it[0].dataIndex).spag, tot.n).join(' · ')],
+    clic: (k, g) => (g == null ? { mes_desembolso: meses[k] } : { mes_desembolso: meses[k], clasificacion: CLAS[g][1] }),
+  });
   const r = ranking(agrupar(D, idx, vp, n0, sm), { minimo: 30, valor: a => pct(a.m30, a.n), orden: a => a.n }).sort((a, b) => b[1] - a[1]);
-  barrasSimples('gCosechaDim', r.map(x => vp === 'mes_desembolso' ? fMes(x[0]) : x[0]), r.map(x => x[1]),
-    { color: SERIE[2], fmt: fP, extra: it => `${fN(r[it[0].dataIndex][2].n)} créditos · ${fN(r[it[0].dataIndex][2].m30)} en mora 30+` });
+  barrasSimples('gCosechaDim', r.map(x => vp === 'mes_desembolso' ? fMes(x[0]) : x[0]), r.map(x => x[1]), {
+    color: SERIE[2], fmt: fP,
+    extra: it => { const a = r[it[0].dataIndex][2]; return [...tipCMP(a.n, a.spag, tot.n), `${fN(a.m30)} en mora 30+ · ${fM(a.s30)} de saldo`]; },
+    clic: k => ({ [vp]: r[k][0] }),
+  });
+  pivote(D, idx, 'Saldo pagaré inicial por mes de desembolso y tramo de mora');
   const tp = S.verPor.tabla_cosecha || 'sucursal';
   const mt = agrupar(D, idx, tp, n0, sm);
   tabla('Detalle de la cosecha', DIMS_VER_POR.filter(d => D.dic[d]).map(d => [d, DIM[d]]), tp, [
@@ -439,7 +594,7 @@ function pintarCosecha(D) {
 
 // ---------- Pestaña Cartera Activa ----------
 function pintarCartera(D) {
-  const idx = filas(D, filtrosActivos(), S.f._desde, S.f._hasta);
+  const idx = filas(D, filtrosActivos());
   const [n0, sm] = accCred(D);
   const tot = agrupar(D, idx, null, n0, sm).get('Total') || n0();
   kpis([
@@ -457,17 +612,26 @@ function pintarCartera(D) {
     + tarjeta('gCarPago', 'Pago en el mes', 'Último pago del mes comparado con el día de pago del crédito.', {})
     + tarjeta('gCarTipo', 'Tipo del último pago', 'Último pago registrado comparado con el valor de la cuota.', {})
     + tarjeta('gCarDim', '% del saldo en mora 30+ por grupo', 'Los 15 grupos con más créditos activos (mínimo 20).', { ancho: true, alto: true, verPor: { id: 'cartera_dim', D, valor: vp } });
-  barrasSimples('gCarMora', MORA_GRUPOS.slice(0, 5), tot.sgrupos.slice(0, 5), { horizontal: false, fmt: fM, color: MORA_COLOR.slice(0, 5), extra: it => `${fN(tot.grupos[it[0].dataIndex])} créditos` });
+  barrasSimples('gCarMora', MORA_GRUPOS.slice(0, 5), tot.sgrupos.slice(0, 5), {
+    horizontal: false, fmt: fM, color: MORA_COLOR.slice(0, 5),
+    extra: it => { const g = it[0].dataIndex; return [`${fN(tot.grupos[g])} créditos · ${fP(pct(tot.grupos[g], tot.act))} de los activos`, `${fP(pct(tot.sgrupos[g], tot.saldo))} del saldo total`]; },
+    clic: g => ({ _grupo: g }),
+  });
   const cuenta = dim => { const m = agrupar(D, idx, dim, () => ({ n: 0, s: 0 }), (a, i) => { a.n++; a.s += mv(D, 'saldo_doc', i); }); return [...m.entries()].sort((a, b) => b[1].n - a[1].n); };
+  const tipCar = lista => it => { const a = lista[it[0].dataIndex][1]; return [`Saldo ${fM(a.s)} · ${fP(pct(a.s, tot.saldo))} del saldo`, `${fP(pct(a.n, tot.act))} de los créditos activos`]; };
   const rod = cuenta('rodamiento');
-  barrasSimples('gCarRod', rod.map(x => x[0]), rod.map(x => x[1].n), { color: SERIE[1], extra: it => fM(rod[it[0].dataIndex][1].s) });
+  barrasSimples('gCarRod', rod.map(x => x[0]), rod.map(x => x[1].n), { color: SERIE[1], extra: tipCar(rod), clic: k => ({ rodamiento: rod[k][0] }) });
   const pm = cuenta('pago_mes');
-  barrasSimples('gCarPago', pm.map(x => x[0]), pm.map(x => x[1].n), { color: SERIE[0], extra: it => fP(pct(pm[it[0].dataIndex][1].n, tot.act)) + ' de los activos' });
+  barrasSimples('gCarPago', pm.map(x => x[0]), pm.map(x => x[1].n), { color: SERIE[0], extra: tipCar(pm), clic: k => ({ pago_mes: pm[k][0] }) });
   const tpg = cuenta('tipo_pago');
-  barrasSimples('gCarTipo', tpg.map(x => x[0]), tpg.map(x => x[1].n), { color: SERIE[3], extra: it => fP(pct(tpg[it[0].dataIndex][1].n, tot.act)) + ' de los activos' });
+  barrasSimples('gCarTipo', tpg.map(x => x[0]), tpg.map(x => x[1].n), { color: SERIE[3], extra: tipCar(tpg), clic: k => ({ tipo_pago: tpg[k][0] }) });
   const r = ranking(agrupar(D, idx, vp, n0, sm), { minimo: 20, valor: a => pct(a.s30, a.saldo), orden: a => a.n }).sort((a, b) => b[1] - a[1]);
-  barrasSimples('gCarDim', r.map(x => vp === 'mes_desembolso' ? fMes(x[0]) : x[0]), r.map(x => x[1]),
-    { color: SERIE[2], fmt: fP, extra: it => `${fN(r[it[0].dataIndex][2].act)} activos · saldo 30+ ${fM(r[it[0].dataIndex][2].s30)}` });
+  barrasSimples('gCarDim', r.map(x => vp === 'mes_desembolso' ? fMes(x[0]) : x[0]), r.map(x => x[1]), {
+    color: SERIE[2], fmt: fP,
+    extra: it => { const a = r[it[0].dataIndex][2]; return [`${fN(a.act)} activos · saldo ${fM(a.saldo)} · ${fP(pct(a.saldo, tot.saldo))} del saldo total`, `Saldo 30+ ${fM(a.s30)}`]; },
+    clic: k => ({ [vp]: r[k][0] }),
+  });
+  pivote(D, idx, 'Saldo pagaré inicial de la cartera activa por mes de desembolso y tramo de mora');
   const tp = S.verPor.tabla_cartera_activa || 'sucursal';
   tabla('Detalle de la cartera activa', [...DIMS_VER_POR, 'mora', 'rodamiento', 'tipo_cartera', 'gestor', 'tipo_pago', 'pago_mes'].filter(d => D.dic[d]).map(d => [d, DIM[d]]), tp, [
     { t: 'Créditos', v: a => a.act, f: fN }, { t: 'Saldo', v: a => a.saldo, f: fM },
@@ -499,12 +663,25 @@ function pintarPrimeros(D) {
     tarjeta('gPPDia', 'Primeros pagos por fecha de vencimiento', 'Créditos según el día en que vence su primera cuota y cómo están hoy.', { ancho: true, leyenda: PP_ESTADOS.map(e => [e[0], e[2]]) })
     + tarjeta('gPPDim', '% en mora sobre los vencidos', 'Los 15 grupos con más créditos vencidos (mínimo 5).', { ancho: true, alto: true, verPor: { id: 'pp_dim', D, valor: vp } });
   const porDia = agrupar(D, idx, 'primera_cuota', n0, sm);
-  const dias = [...porDia.keys()].sort();
-  barrasApiladas('gPPDia', dias.map(fDia), PP_ESTADOS.map(([t, k, c]) => ({ t, c, v: dias.map(d => porDia.get(d)[k]) })));
+  // Todos los días del mes en el eje: un día sin barra es un día sin primeras cuotas (no un dato perdido)
+  const cuotas = (D.dic.primera_cuota || []).slice().sort();
+  const mesPP = cuotas.length ? cuotas[0].slice(0, 7) : `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}`;
+  const ultimo = new Date(+mesPP.slice(0, 4), +mesPP.slice(5, 7), 0).getDate();
+  const dias = Array.from({ length: ultimo }, (_, k) => `${mesPP}-${String(k + 1).padStart(2, '0')}`);
+  const ad = k => porDia.get(dias[k]) || n0();
+  barrasApiladas('gPPDia', dias.map(fDia), PP_ESTADOS.map(([t, k, c]) => ({ t, c, v: dias.map(d => porDia.get(d)?.[k] || null) })), {
+    todas: true,
+    etiqueta: c => { const a = ad(c.dataIndex), k = PP_ESTADOS[c.datasetIndex][1]; return `${c.dataset.label}: ${fN(a[k])} créditos · ${fM(a.s[k] || 0)} · ${fP(pct(a[k], a.n))} del día`; },
+    extra: it => { const a = ad(it[0].dataIndex); return a.n ? [`Total del día: ${fN(a.n)} créditos · ${fM(a.spag)} saldo pagaré`, `${fP(pct(a.n, tot.n))} de las primeras cuotas del mes`] : ['Sin primeras cuotas este día']; },
+    clic: (k, g) => (porDia.has(dias[k]) ? (g == null ? { primera_cuota: dias[k] } : { primera_cuota: dias[k], estado_primer_pago: PP_ESTADOS[g][0] }) : null),
+  });
   const r = [...agrupar(D, idx, vp, n0, sm).entries()].filter(([, a]) => a.venc >= 5).sort((a, b) => b[1].venc - a[1].venc).slice(0, 15)
     .map(([k, a]) => [k, pct(a.mora, a.venc), a]).sort((a, b) => b[1] - a[1]);
-  barrasSimples('gPPDim', r.map(x => vp === 'mes_desembolso' ? fMes(x[0]) : x[0]), r.map(x => x[1]),
-    { color: SERIE[2], fmt: fP, extra: it => `${fN(r[it[0].dataIndex][2].venc)} vencidos · ${fN(r[it[0].dataIndex][2].mora)} en mora` });
+  barrasSimples('gPPDim', r.map(x => vp === 'mes_desembolso' ? fMes(x[0]) : x[0]), r.map(x => x[1]), {
+    color: SERIE[2], fmt: fP,
+    extra: it => { const a = r[it[0].dataIndex][2]; return [`${fN(a.venc)} vencidos · ${fN(a.mora)} en mora · ${fM(a.s.mora || 0)} saldo pagaré en mora`, `${fN(a.n)} créditos · ${fM(a.spag)} · ${fP(pct(a.n, tot.n))} del total`]; },
+    clic: k => ({ [vp]: r[k][0] }),
+  });
   const tp = S.verPor.tabla_primeros_pagos || 'promotor';
   tabla('Detalle de primeros pagos', DIMS_VER_POR.filter(d => D.dic[d]).map(d => [d, DIM[d]]), tp, [
     { t: 'Créditos', v: a => a.n, f: fN }, { t: 'Vencidos', v: a => a.venc, f: fN }, { t: 'Pagaron', v: a => a.pago, f: fN },
@@ -549,7 +726,7 @@ function pintarCono(D) {
     + tarjeta('gConoDia', 'Gestiones por día', 'Gestiones, contactos y promesas de cada día del mes.', { leyenda: [['Gestiones', SERIE[1]], ['Contactos', SERIE[0]], ['Promesas', SERIE[2]]] })
     + tarjeta('gConoProm', 'Promesas por fecha comprometida', 'Monto prometido contra monto pagado.', { leyenda: [['Prometido', SERIE[1]], ['Pagado', SERIE[0]]] })
     + tarjeta('gConoRes', 'Resultados más frecuentes', 'Los 12 resultados de gestión con más registros.', { alto: true });
-  const pasos = [['Gestiones', tot.n], ['Gestionadas', tot.gestionada], ['Contacto', tot.contacto], ['RPC', tot.rpc], ['Promesa', tot.promesa], ['Promesa cumplida', cumpl.n]];
+  const pasos = [['Gestiones', tot.n], ['Intentos', tot.gestionada], ['Contacto', tot.contacto], ['RPC', tot.rpc], ['Promesa', tot.promesa], ['Promesa cumplida', cumpl.n]];
   $('embudo').innerHTML = pasos.map(([t, v], k) => `<div class="paso"><span class="nom">${t}</span><div><div class="barra" style="width:${Math.max(0.5, pct(v, tot.n) || 0)}%"></div></div><span class="val"><b>${fN(v)}</b> ${k ? fP(pct(v, pasos[k - 1][1])) : ''}</span></div>`).join('');
   const pd = agrupar(G, ig, 'dia', nuevo, suma);
   const dias = [...pd.keys()].sort();
@@ -557,18 +734,24 @@ function pintarCono(D) {
     { t: 'Gestiones', c: SERIE[1], v: dias.map(d => pd.get(d).n) },
     { t: 'Contactos', c: SERIE[0], v: dias.map(d => pd.get(d).contacto) },
     { t: 'Promesas', c: SERIE[2], v: dias.map(d => pd.get(d).promesa) },
-  ]);
+  ], {
+    etiqueta: c => { const a = pd.get(dias[c.dataIndex]), tt = [tot.n, tot.contacto, tot.promesa][c.datasetIndex]; return `${c.dataset.label}: ${fN(c.raw)}${c.datasetIndex ? ` · ${fP(pct(c.raw, a.n))} de las gestiones del día` : ''} · ${fP(pct(c.raw, tt))} del total`; },
+    clic: k => ({ desde: dias[k], hasta: dias[k] }),
+  });
   const pf = agrupar(P, ip, 'fecha_promesa', () => ({ prom: 0, pag: 0 }), (a, i) => { a.prom += mv(P, 'monto_promesa', i); a.pag += mv(P, 'monto_pagado', i); });
   const fechas = [...pf.keys()].filter(f => f !== 'SIN FECHA').sort();
   barrasAgrupadas('gConoProm', fechas.map(fDia), [
     { t: 'Prometido', c: SERIE[1], v: fechas.map(f => pf.get(f).prom) },
     { t: 'Pagado', c: SERIE[0], v: fechas.map(f => pf.get(f).pag) },
-  ], { fmt: fM });
+  ], { fmt: fM, extra: it => { const a = pf.get(fechas[it[0].dataIndex]); return [`Pagado ${fP(pct(a.pag, a.prom))} de lo prometido`, `${fP(pct(a.prom, totP.prom))} del monto prometido total`]; } });
   const res = [...agrupar(G, ig, 'descripcion_resultado', nuevo, suma).entries()].sort((a, b) => b[1].n - a[1].n).slice(0, 12);
-  barrasSimples('gConoRes', res.map(x => x[0]), res.map(x => x[1].n), { color: SERIE[1], extra: it => fP(pct(res[it[0].dataIndex][1].n, tot.n)) + ' de las gestiones' });
+  barrasSimples('gConoRes', res.map(x => x[0]), res.map(x => x[1].n), {
+    color: SERIE[1], extra: it => { const a = res[it[0].dataIndex][1]; return [`${fP(pct(a.n, tot.n))} de las gestiones`, `${fN(a.contacto)} contactos · ${fN(a.promesa)} promesas`]; },
+    clic: k => ({ descripcion_resultado: res[k][0] }),
+  });
   const tp = S.verPor.tabla_cono || 'usuario';
   tabla('Detalle del cono', [['usuario', 'Gestor'], ['descripcion_accion', 'Acción'], ['descripcion_resultado', 'Resultado'], ['tipo_cartera', 'Tipo de cartera'], ['dia', 'Día']], tp, [
-    { t: 'Gestiones', v: a => a.n, f: fN }, { t: 'Gestionadas', v: a => a.gestionada, f: fN }, { t: 'Contactos', v: a => a.contacto, f: fN },
+    { t: 'Gestiones', v: a => a.n, f: fN }, { t: 'Intentos', v: a => a.gestionada, f: fN }, { t: 'Contactos', v: a => a.contacto, f: fN },
     { t: 'RPC', v: a => a.rpc, f: fN }, { t: 'Promesas', v: a => a.promesa, f: fN },
     { t: '% contacto', v: a => pct(a.contacto, a.n), f: fP }, { t: '% RPC', v: a => pct(a.rpc, a.n), f: fP }, { t: '% promesa s/ RPC', v: a => pct(a.promesa, a.rpc), f: fP },
   ], agrupar(G, ig, tp, nuevo, suma), tot);
@@ -590,6 +773,7 @@ async function abrir(tab) {
 
 function pintar() {
   const D = S.datos[S.tab];
+  $('pivCaja').hidden = true;   // el cuadro mes × tramo de mora solo lo pintan Cosecha y Cartera Activa
   if (!D) { $('kpis').innerHTML = $('graficos').innerHTML = ''; $('tablaCaja').hidden = true; $('preguntas').hidden = !CFG.IA_CLAUDE; return; }
   pintarFiltros(D);
   ({ cosecha: pintarCosecha, cartera_activa: pintarCartera, primeros_pagos: pintarPrimeros, cono: pintarCono })[S.tab](D);
@@ -616,19 +800,34 @@ $('btnActualizar').addEventListener('click', async () => {
   if (LOCAL) { S.datos = {}; await leerMeta(); return abrir(S.tab); }
   const btn = $('btnActualizar');
   btn.disabled = true; btn.textContent = 'Actualizando…';
+  // Una actualización "procesando" de hace más de 3 h se da por interrumpida (la PC se apagó a media carga)
+  const enCurso = async () => ok(await sb.from('cvc_actualizaciones').select('id,iniciado_en,solicitado_nombre')
+    .eq('estado', 'procesando').gte('iniciado_en', new Date(Date.now() - 3 * 3600e3).toISOString())
+    .order('id', { ascending: false }).limit(1))[0];
+  const hora = t => new Date(t).toLocaleTimeString('es-NI', { hour: 'numeric', minute: '2-digit' });
+  const avisoEnCurso = c => {
+    aviso(`Ya hay una actualización en curso (${c.solicitado_nombre || 'solicitada'}, iniciada a las ${hora(c.iniciado_en)}). `
+      + 'Espera unos minutos: los datos se recargan solos al terminar. No hace falta volver a darle a Actualizar.');
+    btn.textContent = 'Actualización en curso…';
+  };
   try {
-    const p = ok(await sb.from('cvc_actualizaciones').insert({ solicitado_nombre: S.perfil.nombre }).select().single());
+    const actual = await enCurso();
+    let id;
+    if (actual) { id = actual.id; avisoEnCurso(actual); }
+    else id = ok(await sb.from('cvc_actualizaciones').insert({ solicitado_nombre: S.perfil.nombre }).select().single()).id;
     const t0 = Date.now();
     for (;;) {
       await new Promise(r => setTimeout(r, 5000));
-      const e = ok(await sb.from('cvc_actualizaciones').select('estado,mensaje').eq('id', p.id).single());
+      const e = ok(await sb.from('cvc_actualizaciones').select('estado,mensaje').eq('id', id).single());
       if (e.estado === 'ok') { aviso(''); S.datos = {}; await leerMeta(); await abrir(S.tab); break; }
       if (e.estado === 'error') { aviso(`La actualización falló: ${e.mensaje || ''}`, true); break; }
-      if (e.estado === 'pendiente' && Date.now() - t0 > 60000) {
+      if (e.estado === 'procesando') { if (!actual) { btn.textContent = 'Procesando…'; aviso(''); } continue; }
+      if (Date.now() - t0 > 60000) {  // sigue pendiente: ¿el proceso está ocupado con otra carga o no está corriendo?
+        const otra = await enCurso();
+        if (otra) { avisoEnCurso(otra); continue; }
         aviso('El proceso de actualización no respondió: la PC que lo ejecuta puede estar apagada. Se muestran los últimos datos cargados; la solicitud queda en cola.', true);
         break;
       }
-      if (e.estado === 'procesando') btn.textContent = 'Procesando…';
     }
   } catch (err) { aviso(`No se pudo pedir la actualización: ${err.message}`, true); }
   finally { btn.disabled = false; btn.textContent = 'Actualizar'; }
@@ -641,7 +840,7 @@ const accCono = G => [() => ({ n: 0, gestionada: 0, contacto: 0, rpc: 0, promesa
 const de = (a, b, u) => `${fN(a)} de ${fN(b)} ${u}`;
 const PREG = {
   cosecha: {
-    datos: D => D, filas: D => filas(D, filtrosActivos(), S.f._desde, S.f._hasta), acc: accCred, min: 30, tam: a => a.n, u: 'créditos',
+    datos: D => D, filas: D => filas(D, filtrosActivos()), acc: accCred, min: 30, tam: a => a.n, u: 'créditos',
     dims: DIMS_VER_POR,
     ind: [
       { id: 'm30', t: '% de mora 30+', v: a => pct(a.m30, a.n), f: fP, pct: true, det: a => de(a.m30, a.n, 'créditos') },
@@ -657,7 +856,7 @@ const PREG = {
       ['¿Cómo evoluciona la mora 30+ por mes?', 'mes_desembolso', 'm30', 'orden', 0]],
   },
   cartera_activa: {
-    datos: D => D, filas: D => filas(D, filtrosActivos(), S.f._desde, S.f._hasta), acc: accCred, min: 20, tam: a => a.act, u: 'créditos activos',
+    datos: D => D, filas: D => filas(D, filtrosActivos()), acc: accCred, min: 20, tam: a => a.act, u: 'créditos activos',
     dims: [...DIMS_VER_POR, 'mora', 'rodamiento', 'tipo_cartera', 'gestor', 'tipo_pago', 'pago_mes'],
     ind: [
       { id: 's30p', t: '% del saldo en mora 30+', v: a => pct(a.s30, a.saldo), f: fP, pct: true, det: a => `${fM(a.s30)} de ${fM(a.saldo)}` },
@@ -723,8 +922,8 @@ function pintarGuiada() {
 }
 
 function textoFiltros() {
-  const f = S.tab === 'cono' ? Object.entries(S.cono).filter(([, v]) => v).map(([k, v]) => `${k === 'desde' ? 'Desde' : k === 'hasta' ? 'Hasta' : CONO_DIMS[k]}: ${k === 'desde' || k === 'hasta' ? fDia(v) : v}`)
-    : Object.entries(S.f).filter(([, v]) => v).map(([k, v]) => `${k === '_desde' ? 'Cosecha desde' : k === '_hasta' ? 'Cosecha hasta' : DIM[k]}: ${k.startsWith('_') ? fMes(v) : v}`);
+  const F = S.tab === 'cono' ? S.cono : S.f;
+  const f = Object.entries(F).filter(([, v]) => v != null && v !== '' && !(Array.isArray(v) && !v.length)).map(([k, v]) => `${nomFiltro(k)}: ${valFiltro(k, v)}`);
   return f.length ? `Con los filtros aplicados (${f.join(' · ')}). ` : '';
 }
 

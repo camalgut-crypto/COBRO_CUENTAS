@@ -156,3 +156,32 @@ ul.perfiles { margin: 8px 0 0; padding-left: 18px; }
 .fguiada label { display: flex; align-items: center; gap: 6px; color: var(--gris); }
 .msg.ia > div { min-width: 0; }
 .lienzo-q { position: relative; width: 100%; max-width: 760px; margin-top: 10px; background: #fff; border-radius: 10px; padding: 8px; box-sizing: border-box; white-space: normal; }
+
+/* Filtros activos (de las listas o de un clic en un gráfico) */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: -4px 0 12px; }
+.chipf { border: 1px solid var(--verde); background: var(--verde-10); color: var(--navy); border-radius: 99px; padding: 3px 10px; font-size: 12px; cursor: pointer; }
+.chipf:hover { background: var(--verde-20); }
+
+/* Cuadro mes de desembolso × tramo de mora */
+.nota-piv { margin: -4px 0 8px; }
+table.piv th { cursor: default; }
+table.piv td.clic { cursor: pointer; }
+table.piv td.clic:hover { background: var(--verde-20) !important; }
+table.piv tr.anio td { font-weight: 700; background: #EEF2F8 !important; color: var(--navy); }
+table.piv td.mes { padding-left: 26px; }
+table.piv td.tot { font-weight: 700; }
+
+/* Filtros de selección múltiple */
+.multi { position: relative; display: flex; flex-direction: column; gap: 3px; }
+.multi .lbl { font-size: 12px; color: var(--gris); font-weight: 700; }
+.multi .mbtn { min-width: 110px; max-width: 220px; padding: 7px 28px 7px 9px; border: 1px solid var(--borde); border-radius: 7px; background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23333740'/%3E%3C/svg%3E") right 9px center no-repeat; text-align: left; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--texto); }
+.multi.activo .mbtn { border-color: var(--verde); background-color: var(--verde-10); font-weight: 700; }
+.mpanel { position: absolute; top: 100%; left: 0; z-index: 30; margin-top: 4px; background: #fff; border: 1px solid var(--borde); border-radius: 10px; box-shadow: 0 8px 24px rgba(6,37,91,.15); padding: 8px; min-width: 240px; max-width: 360px; }
+.mpanel .mbusca { width: 100%; padding: 6px 8px; border: 1px solid var(--borde); border-radius: 6px; margin-bottom: 6px; }
+.mpanel .macc { display: flex; gap: 6px; margin-bottom: 6px; }
+.mpanel .macc button { border: 1px solid var(--borde); background: #fff; color: var(--navy); border-radius: 6px; padding: 3px 7px; font-size: 11px; cursor: pointer; }
+.mpanel .macc button:hover { background: var(--verde-10); }
+.mpanel .mlista { max-height: 280px; overflow: auto; display: grid; gap: 1px; }
+.mpanel .mop { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 5px; font-size: 13px; color: var(--texto); font-weight: 400; cursor: pointer; white-space: nowrap; }
+.mpanel .mop:hover { background: var(--verde-10); }
+@media (max-width: 760px) { .multi, .multi .mbtn { width: 100%; max-width: none; } .mpanel { max-width: none; width: 100%; } }

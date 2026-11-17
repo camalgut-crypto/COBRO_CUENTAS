@@ -17,7 +17,10 @@ DIMS = ["mes_desembolso", "sucursal", "canal", "sucursal_promotor", "promotor", 
         "rango_salario", "rango_edad", "rango_multiplicador", "rango_antig_cliente", "rango_antig_credito",
         "rango_antig_laboral", "rango_capacidad", "rango_ingreso", "rango_estabilidad", "rango_edad_motor", "perfil_motor",
         "politica_hit", "genero", "plazo", "empleo_inss", "mora", "rodamiento", "tipo_cartera", "tipo_pago", "pago_mes",
-        "estado_promesa", "ult_resultado", "gestor", "estado_primer_pago", "tipo_credito_legal"]
+        "estado_promesa", "ult_resultado", "gestor", "estado_primer_pago", "tipo_credito_legal",
+        # filtros definidos por Riesgo el 17-nov-2026 (campos verdes y azules del reporte)
+        "producto_madre", "resultado_motor", "status_promesa_pago", "dealer_genesis", "suc_dealer", "con_excepcion",
+        "con_prima", "dia_pago", "tipo_salario"]
 MEDIDAS = ["monto_des", "saldopagare", "saldo_doc", "dias_mora", "cuotas_vencidas", "valor_vencido", "cuotas_pagas",
            "intentos", "gestionada", "contacto", "rpc", "promesa", "monto_promesa", "monto_pagado"]
 PESTANAS = ("cosecha", "cartera_activa", "primeros_pagos", "cono")
@@ -50,6 +53,9 @@ def _agrupar(df: pd.DataFrame, por: list[str], sumas: list[str]) -> dict:
 def pestañas(b: pd.DataFrame, g: pd.DataFrame, hoy: date) -> dict[str, dict]:
     b = b.copy()
     b["plazo"] = b["numero_cuotas"].map(lambda v: None if pd.isna(v) else f"{int(v)} cuotas")
+    b["dia_pago"] = b["dias_pago"].map(lambda v: None if pd.isna(v) else str(int(v)))
+    for c in ["resultado_motor", "status_promesa_pago", "dealer_genesis", "suc_dealer", "tipo_salario"]:
+        b[c] = b[c].fillna("SIN DATO") if c in b else "SIN DATO"
     activa = b[b["en_cartera"]]
     pp = b[b["primer_pago_mes"]].copy()
     pp["primera_cuota"] = pp["primera_cuota"].dt.strftime("%Y-%m-%d")
@@ -161,41 +167,114 @@ def resumen_ia(b: pd.DataFrame, g: pd.DataFrame, hoy: date) -> dict:
 
 
 # ---------- descarga ----------
-COLUMNAS_EXCEL = {  # orden y nombre de las columnas del Excel de descarga
-    "credito": "Crédito", "comprobante": "Comprobante", "numero": "Número", "nit": "NIT", "cedula_cliente": "Cédula",
-    "nombre_deudor": "Cliente", "genero": "Género", "edad": "Edad", "est_civil": "Estado civil", "profesion": "Profesión",
-    "ciudad": "Ciudad", "sucursal": "Sucursal", "nombre_centro": "Centro", "producto": "Producto", "nombre_mod": "Modalidad",
-    "producto_comercial": "Producto comercial", "producto_motor": "Producto motor", "fecha_renov": "Fecha desembolso",
-    "mes_desembolso": "Mes desembolso", "primera_cuota": "Primera cuota", "fecha_vence": "Fecha vence",
-    "numero_cuotas": "Plazo", "valor_cuota": "Valor cuota", "tasainteres": "Tasa", "monto_des": "Monto desembolsado",
-    "saldopagare": "Saldo pagaré inicial", "ncredxcliente": "Créditos del cliente", "dias_pago": "Día de pago",
-    "salario": "Salario", "tiempo_trabajo": "Tiempo trabajo (meses)", "dlo": "DLO",
-    "num_solicitud": "Solicitud", "tipo_credito": "Tipo crédito", "categorizacion": "Categorización",
-    "promotor": "Promotor", "cedula_promotor": "Cédula promotor", "tipo_promotor": "Tipo promotor", "canal": "Canal",
-    "sucursal_promotor": "Sucursal promotor", "analista": "Analista", "suc_origen": "Sucursal origen",
-    "medio_captacion": "Medio captación", "score": "Score", "fecha_aprobado": "Fecha aprobado",
-    "resultado_motor": "Resultado motor", "perfil_motor": "Perfil motor", "politica_hit": "Política HIT",
-    "ingreso_bruto": "Ingreso bruto", "capacidad_pago": "Capacidad de pago", "score_tun": "Score TUN",
-    "estabilidad_inss": "Estabilidad INSS", "edad_motor": "Edad motor",
-    "empleo_inss": "En base INSS", "empresa_inss": "Empresa INSS", "salario_inss": "Salario INSS",
-    "empleador_inss": "Código empleador", "primer_credito": "Primer crédito del cliente",
-    "dias_mora": "Días mora", "mora": "Mora", "saldo_doc": "Saldo", "cuotas_vencidas": "Cuotas vencidas",
-    "tipo_credito_legal": "Tipo crédito legal", "fecha_ult_pago": "Fecha último pago", "monto_ult_pago": "Monto último pago",
-    "fecha_proximo_pago": "Próximo pago", "tipo_pago": "Tipo de pago", "pago_mes": "Pago en el mes", "pago_antes": "Pago antes",
-    "empresa_cendoc": "Empresa Cendoc", "dealer": "Dealer", "centro_cendoc": "Centro Cendoc",
-    "cuotas_pagas": "Cuotas pagadas", "valor_vencido": "Valor vencido", "rodamiento": "Rodamiento", "cargo": "Cargo",
-    "intentos": "Intentos", "gestionada": "Gestionadas", "contacto": "Contactos", "rpc": "RPC", "promesa": "Promesas",
-    "ult_fecha_gestion": "Última gestión", "gestor": "Gestor", "ult_accion": "Última acción", "ult_resultado": "Último resultado",
-    "tipo_cartera": "Tipo cartera", "status_promesa_pago": "Status promesa", "fecha_promesa": "Fecha promesa",
-    "monto_promesa": "Monto promesa", "estado_promesa": "Estado promesa", "monto_pagado": "Monto pagado",
-    "antig_cliente": "Antigüedad cliente (meses)", "rango_antig_cliente": "Rango antigüedad cliente",
-    "antig_credito": "Antigüedad crédito (meses)", "rango_antig_credito": "Rango antigüedad crédito",
-    "clasificacion": "Clasificación", "rango_antig_laboral": "Rango antigüedad laboral", "rango_desembolso": "Rango desembolso",
-    "rango_edad": "Rango edad", "rango_salario": "Rango salario", "multiplicador": "Multiplicador",
-    "rango_multiplicador": "Rango multiplicador", "rango_ingreso": "Rango ingreso bruto",
-    "rango_capacidad": "Rango capacidad de pago", "rango_estabilidad": "Rango estabilidad INSS",
-    "rango_edad_motor": "Rango edad motor", "rango_score": "Rango score",
-    "primer_pago_mes": "Primera cuota este mes", "estado_primer_pago": "Estado primer pago",
+COLUMNAS_EXCEL = {  # orden y nombre de las columnas del Excel de descarga (definidos por Riesgo el 17-nov-2026)
+    # 'filtro' = campo que se usará como filtro en la app
+    "credito": "Crédito",
+    "cedula_cliente": "Cédula",
+    "nombre_deudor": "Cliente",
+    "genero": "Género",
+    "edad": "Edad",
+    "est_civil": "Estado civil",
+    "profesion": "Profesión",
+    "sucursal": "Sucursal",
+    "nombre_centro": "Centro",
+    "producto_madre": "Producto Madre",  # nuevo
+    "nombre_mod": "Modalidad",
+    "producto_comercial": "Producto comercial",  # filtro
+    "fecha_renov": "Fecha desembolso",
+    "mes_desembolso": "Mes desembolso",  # filtro
+    "primera_cuota": "Primera cuota",
+    "fecha_vence": "Fecha vence",
+    "numero_cuotas": "Plazo",
+    "valor_cuota": "Valor cuota",
+    "tasainteres": "Tasa",
+    "monto_des": "Monto desembolsado",
+    "saldopagare": "Saldo pagaré inicial",
+    "ncredxcliente": "Créditos del cliente",
+    "dias_pago": "Día de pago",  # filtro
+    "salario": "Salario Loan",
+    "tiempo_trabajo": "Tiempo trabajo (meses) Loan",
+    "dlo": "DLO",
+    "num_solicitud": "Solicitud",
+    "tipo_credito": "Tipo crédito",
+    "promotor": "Promotor",
+    "canal": "Canal",  # filtro
+    "sucursal_promotor": "Sucursal promotor",  # filtro
+    "medio_captacion": "Medio captación",  # filtro
+    "score": "Score",
+    "dealer_genesis": "Dealer",  # nuevo
+    "suc_dealer": "Sucursal dealer",  # filtro
+    "con_excepcion": "Con Excepcion",  # nuevo
+    "excepcion": "Excepción",
+    "motivo_rechazo": "Motivo rechazo",
+    "lugar_trabajo": "Lugar de trabajo Genesis",
+    "actividad_economica": "Actividad económica",
+    "tipo_salario": "Tipo salario",  # filtro
+    "capacidad_pago_bitacora": "Capacidad de pago (bitácora)",
+    "razon_cuota_ingreso": "Razón cuota ingreso (bitácora)",
+    "porcentaje_financiar": "% a financiar",
+    "con_prima": "Con Prima",  # nuevo
+    "resultado_motor": "Resultado motor",  # filtro
+    "perfil_motor": "Perfil motor",
+    "politica_hit": "Política HIT",  # filtro
+    "ingreso_bruto": "Ingreso bruto",
+    "capacidad_pago": "Capacidad de pago",
+    "score_tun": "Score TUN",
+    "estabilidad_inss": "Estabilidad INSS",
+    "edad_motor": "Edad motor",
+    "empleo_inss": "En base INSS",  # filtro
+    "empresa_inss": "Empresa INSS",
+    "salario_inss": "Salario INSS",
+    "empleador_inss": "Código empleador",
+    "primer_credito": "Primer crédito del cliente",
+    "dias_mora": "Días mora actual",
+    "mora": "Mora Actual",  # filtro
+    "saldo_doc": "Saldo",
+    "cuotas_vencidas": "Cuotas vencidas",
+    "tipo_credito_legal": "Tipo Cartera",  # filtro
+    "fecha_ult_pago": "Fecha último pago",
+    "monto_ult_pago": "Monto último pago",
+    "fecha_proximo_pago": "Próximo pago",
+    "tipo_pago": "Tipo de pago",
+    "pago_mes": "Pago en el mes",
+    "pago_antes": "Pago antes",
+    "centro_cendoc": "Centro de Riesgo Actual",
+    "cuotas_pagas": "Cuotas pagadas",
+    "valor_vencido": "Valor vencido",
+    "rodamiento": "Rodamiento",  # filtro
+    "intentos": "Intentos",
+    "gestionada": "Gestionadas",
+    "contacto": "Contactos",
+    "rpc": "RPC",
+    "promesa": "Promesas",
+    "ult_fecha_gestion": "Última gestión",
+    "gestor": "Gestor",
+    "ult_accion": "Última acción",
+    "ult_resultado": "Último resultado",
+    "tipo_cartera": "Tipo cartera del cono",
+    "status_promesa_pago": "Status promesa",  # filtro
+    "fecha_promesa": "Fecha promesa",
+    "monto_promesa": "Monto promesa",
+    "estado_promesa": "Estado promesa",
+    "monto_pagado": "Monto pagado",
+    "antig_cliente": "Antigüedad cliente (meses)",
+    "rango_antig_cliente": "Rango antigüedad cliente",  # filtro
+    "antig_credito": "Antigüedad crédito (meses)",
+    "rango_antig_credito": "Rango antigüedad crédito",  # filtro
+    "clasificacion": "Clasificación",  # filtro
+    "rango_antig_laboral": "Rango antigüedad laboral",  # filtro
+    "rango_desembolso": "Rango desembolso",  # filtro
+    "rango_edad": "Rango edad",  # filtro
+    "rango_salario": "Rango salario",  # filtro
+    "multiplicador": "Multiplicador",
+    "rango_multiplicador": "Rango multiplicador",  # filtro
+    "rango_ingreso": "Rango ingreso bruto",  # filtro
+    "rango_capacidad": "Rango capacidad de pago",  # filtro
+    "rango_estabilidad": "Rango estabilidad INSS",  # filtro
+    "rango_edad_motor": "Rango edad motor",  # filtro
+    "rango_score": "Rango score",  # filtro
+    "primer_pago_mes": "Primera cuota este mes",
+    "estado_primer_pago": "Estado primer pago",
 }
 
 

@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=2026111402">
+  <link rel="stylesheet" href="styles.css?v=2026111701">
 </head>
 <body>
   <div id="login" class="login" hidden>
@@ -56,8 +56,17 @@
       <div id="vistaDatos">
         <div class="filtros" id="filtros"></div>
         <div class="filtros mas" id="filtrosMas" hidden></div>
+        <div class="chips" id="chips" hidden></div>
         <section class="kpis" id="kpis"></section>
         <section class="graficos" id="graficos"></section>
+        <section id="pivCaja" class="panel" hidden>
+          <div class="panel-tit">
+            <h3 id="pivTit"></h3>
+            <label class="small">Mostrar <select id="pivMed"></select></label>
+          </div>
+          <p class="small muted nota-piv">Clic en un año para abrirlo o cerrarlo; clic en un mes o en una celda para filtrar la pestaña. Al pasar el puntero sobre una celda se ven la cantidad, el monto y el % del total.</p>
+          <div class="tabla-caja"><table class="piv"><thead id="pivHead"></thead><tbody id="pivBody"></tbody></table></div>
+        </section>
         <section id="tablaCaja" class="panel" hidden>
           <div class="panel-tit">
             <h3 id="tablaTit"></h3>
@@ -111,6 +120,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.99.3/dist/umd/supabase.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <script src="config.js?v=2026111402"></script>
-  <script src="app.js?v=2026111402"></script>
+  <script src="app.js?v=2026111701"></script>
 </body>
 </html>
