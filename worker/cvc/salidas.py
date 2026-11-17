@@ -22,6 +22,9 @@ DIMS = ["mes_desembolso", "sucursal", "canal", "sucursal_promotor", "promotor", 
         "producto_madre", "resultado_motor", "status_promesa_pago", "dealer_genesis", "suc_dealer", "con_excepcion",
         "con_prima", "dia_pago", "tipo_salario"]
 MEDIDAS = ["monto_des", "saldopagare", "saldo_doc", "dias_mora", "cuotas_vencidas", "valor_vencido", "cuotas_pagas",
+           # para "Arme su gráfico o tabla" (suma y promedio)
+           "valor_cuota", "salario", "score", "tasainteres", "monto_ult_pago", "capacidad_pago", "ingreso_bruto", "edad",
+           "multiplicador", "salario_inss", "porcentaje_financiar", "razon_cuota_ingreso", "monto_aprobado_motor",
            "intentos", "gestionada", "contacto", "rpc", "promesa", "monto_promesa", "monto_pagado"]
 PESTANAS = ("cosecha", "cartera_activa", "primeros_pagos", "cono")
 MORA30 = ["B2", "B3", "B4", "B5", "B6", "B7"]
@@ -50,6 +53,10 @@ def _agrupar(df: pd.DataFrame, por: list[str], sumas: list[str]) -> dict:
     return _columnar(t, por, ["n"] + sumas)
 
 
+def _med(df: pd.DataFrame) -> list[str]:
+    return [c for c in MEDIDAS if c in df]
+
+
 def pestañas(b: pd.DataFrame, g: pd.DataFrame, hoy: date) -> dict[str, dict]:
     b = b.copy()
     b["plazo"] = b["numero_cuotas"].map(lambda v: None if pd.isna(v) else f"{int(v)} cuotas")
@@ -70,9 +77,10 @@ def pestañas(b: pd.DataFrame, g: pd.DataFrame, hoy: date) -> dict[str, dict]:
     prom["fecha_promesa"] = prom["fecha_promesa"].dt.strftime("%Y-%m-%d").fillna("SIN FECHA")
 
     return {
-        "cosecha": _columnar(b, DIMS, MEDIDAS),
-        "cartera_activa": _columnar(activa, DIMS, MEDIDAS),
-        "primeros_pagos": _columnar(pp, DIMS + ["primera_cuota"], MEDIDAS),
+        # "fila" = número de fila en la base completa: la descarga filtrada toma esas filas de descargas/base.json.gz
+        "cosecha": _columnar(b, DIMS, _med(b), {"fila": [int(i) for i in b.index]}),
+        "cartera_activa": _columnar(activa, DIMS, _med(activa), {"fila": [int(i) for i in activa.index]}),
+        "primeros_pagos": _columnar(pp, DIMS + ["primera_cuota"], _med(pp), {"fila": [int(i) for i in pp.index]}),
         "cono": {
             "gestiones": _agrupar(g, ["dia", "usuario", "descripcion_accion", "descripcion_resultado", "tipo_cartera",
                                       "de_la_cosecha"], ["gestionada", "contacto", "rpc", "promesa"]),
@@ -287,6 +295,31 @@ def excel(b: pd.DataFrame) -> bytes:
     with pd.ExcelWriter(buf, engine="openpyxl") as w:
         df.to_excel(w, sheet_name="Cosecha", index=False, freeze_panes=(1, 1))
     return buf.getvalue()
+
+
+def base_json(b: pd.DataFrame) -> dict:
+    """Base completa (columnas del Excel) en formato columnar para que la app descargue solo las filas filtradas.
+    Textos con diccionario (se repiten mucho), fechas como texto ISO, números tal cual. Mismo orden de filas que la base."""
+    df = b[[c for c in COLUMNAS_EXCEL if c in b]]
+    cols, datos = [], []
+    for c in df.columns:
+        s = df[c]
+        if pd.api.types.is_bool_dtype(s):
+            cols.append({"n": COLUMNAS_EXCEL[c], "t": "b"}); datos.append([None if pd.isna(v) else bool(v) for v in s])
+        elif pd.api.types.is_datetime64_any_dtype(s):
+            t = s.dt.tz_localize(None) if getattr(s.dt, "tz", None) else s
+            con_hora = bool((t.dropna().dt.normalize() != t.dropna()).any())
+            fmt = "%Y-%m-%dT%H:%M:%S" if con_hora else "%Y-%m-%d"
+            cols.append({"n": COLUMNAS_EXCEL[c], "t": "d"}); datos.append([None if pd.isna(v) else v.strftime(fmt) for v in t])
+        elif pd.api.types.is_numeric_dtype(s):
+            cols.append({"n": COLUMNAS_EXCEL[c], "t": "n"})
+            datos.append([None if pd.isna(v) else (int(v) if float(v).is_integer() else round(float(v), 6)) for v in s])
+        else:
+            v = s.astype("object").where(s.notna(), None)
+            cat = pd.Categorical(v.map(lambda x: None if x is None else str(x)))
+            cols.append({"n": COLUMNAS_EXCEL[c], "t": "s", "dic": [str(x) for x in cat.categories]})
+            datos.append([None if k < 0 else int(k) for k in cat.codes])
+    return {"n": len(df), "cols": cols, "datos": datos}
 
 
 def a_json(obj) -> bytes:

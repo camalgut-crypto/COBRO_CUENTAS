@@ -758,6 +758,148 @@ function pintarCono(D) {
   ], agrupar(G, ig, tp, nuevo, suma), tot);
 }
 
+// ---------- Arme su gráfico o tabla (cada persona; se guarda en su navegador y respeta los filtros) ----------
+const MED_NOM = {
+  monto_des: 'Monto desembolsado', saldopagare: 'Saldo pagaré inicial', saldo_doc: 'Saldo actual', dias_mora: 'Días mora actual',
+  cuotas_vencidas: 'Cuotas vencidas', valor_vencido: 'Valor vencido', cuotas_pagas: 'Cuotas pagadas', intentos: 'Intentos (gestiones)',
+  gestionada: 'Intentos', contacto: 'Contactos', rpc: 'RPC', promesa: 'Promesas', monto_promesa: 'Monto promesa', monto_pagado: 'Monto pagado',
+  valor_cuota: 'Valor cuota', salario: 'Salario Loan', score: 'Score', tasainteres: 'Tasa', monto_ult_pago: 'Monto último pago',
+  capacidad_pago: 'Capacidad de pago', ingreso_bruto: 'Ingreso bruto', edad: 'Edad', multiplicador: 'Multiplicador',
+  salario_inss: 'Salario INSS', porcentaje_financiar: '% a financiar', razon_cuota_ingreso: 'Razón cuota ingreso (bitácora)',
+  monto_aprobado_motor: 'Monto aprobado motor',
+};
+const MONEDA = new Set(['monto_des', 'saldopagare', 'saldo_doc', 'valor_vencido', 'monto_promesa', 'monto_pagado', 'valor_cuota', 'salario',
+  'monto_ult_pago', 'ingreso_bruto', 'salario_inss', 'monto_aprobado_motor']);
+const CRONO = new Set(['mes_desembolso', 'primera_cuota', 'dia', 'fecha_promesa', 'dia_pago', 'plazo']);
+const PALETA = [...SERIE, '#06255B', '#F2C20C', '#EE232E', '#7A5195', '#8FAEDF'];
+const TIPOS_ARM = { barras: 'Barras', apiladas: 'Barras apiladas', lineas: 'Líneas', tabla: 'Tabla' };
+const claveArm = () => `cvc_graficos_${S.perfil?.usuario || S.perfil?.nombre || 'yo'}_${S.tab}`;
+const leerArm = () => { try { return JSON.parse(localStorage.getItem(claveArm()) || '[]'); } catch { return []; } };
+const guardarArm = l => { try { localStorage.setItem(claveArm(), JSON.stringify(l)); } catch { /* sin almacenamiento: queda solo en esta vista */ } };
+const nomCampo = d => DIM[d] || CONO_DIMS[d] || (d === 'dia' ? 'Día' : d === 'fecha_promesa' ? 'Fecha promesa' : d);
+
+function armDatos(D) {
+  if (S.tab === 'cono') return { T: D.gestiones, idx: filasCono(D.gestiones), cuenta: i => mv(D.gestiones, 'n', i), u: 'gestiones' };
+  return { T: D, idx: filas(D, filtrosActivos()), cuenta: () => 1, u: 'créditos' };
+}
+
+function pintarArmar(D) {
+  const caja = $('armarCaja');
+  if (!D) { caja.hidden = true; return; }
+  caja.hidden = false;
+  const { T } = armDatos(D);
+  const dims = Object.keys(T.dic).filter(d => d !== 'n').sort((a, b) => nomCampo(a).localeCompare(nomCampo(b), 'es'));
+  const meds = Object.keys(T.datos).filter(c => !T.dic[c] && c !== 'n' && c !== 'fila' && MED_NOM[c]);
+  const op = (v, t, sel) => `<option value="${v}"${v === sel ? ' selected' : ''}>${esc(t)}</option>`;
+  const f = S.armForm?.[S.tab] || {};
+  const tipos = Object.entries(TIPOS_ARM).filter(([k]) => k !== 'tabla' || veTablas());
+  $('farmar').innerHTML =
+    `<label>Tipo<select id="aTipo">${tipos.map(([k, t]) => op(k, t, f.tipo)).join('')}</select></label>`
+    + `<label>Agrupar por<select id="aDim">${dims.map(d => op(d, nomCampo(d), f.dim)).join('')}</select></label>`
+    + `<label>Separar por (opcional)<select id="aDim2"><option value="">— Ninguno —</option>${dims.map(d => op(d, nomCampo(d), f.dim2)).join('')}</select></label>`
+    + `<label>Medida<select id="aMed">${op('n', `Cantidad de ${armDatos(D).u}`, f.med)}${meds.map(c => op(`sum:${c}`, `Suma de ${MED_NOM[c]}`, f.med)).join('')}${meds.map(c => op(`avg:${c}`, `Promedio de ${MED_NOM[c]}`, f.med)).join('')}</select></label>`
+    + `<label>Mostrar<select id="aComo">${op('valor', 'Valor', f.como)}${op('pct', '% del total', f.como)}</select></label>`
+    + `<label>Grupos<select id="aTop">${[10, 15, 25, 50].map(n => op(String(n), `Los ${n} mayores`, f.top)).join('')}${op('0', 'Todos', f.top)}</select></label>`
+    + `<button class="btn">Agregar</button>`;
+  const lista = leerArm();
+  $('misGraficos').innerHTML = lista.map((g, k) => `<article class="graf${g.tipo === 'tabla' ? ' ancho' : ''}"><div class="cab"><h3>${esc(tituloArm(g, D))}</h3><button type="button" class="btn lin mini" data-quitarg="${k}" title="Quitar este gráfico">✕ Quitar</button></div>`
+    + (g.tipo === 'tabla' ? `<div class="tabla-caja" id="arm${k}"></div>` : `<div class="lienzo"><canvas id="arm${k}"></canvas></div>`) + '</article>').join('');
+  $('armVacio').hidden = lista.length > 0;
+  lista.forEach((g, k) => { try { dibujarArm(`arm${k}`, g, D); } catch (err) { console.error(err); } });
+}
+
+function tituloArm(g, D) {
+  const [tipo, col] = g.med.split(':');
+  const med = tipo === 'n' ? `Cantidad de ${armDatos(D).u}` : `${tipo === 'sum' ? 'Suma' : 'Promedio'} de ${MED_NOM[col] || col}`;
+  return `${med}${g.como === 'pct' ? ' (% del total)' : ''} por ${nomCampo(g.dim)}${g.dim2 ? ` y ${nomCampo(g.dim2)}` : ''}`;
+}
+
+function dibujarArm(id, g, D) {
+  const { T, idx, cuenta } = armDatos(D);
+  if (!T.dic[g.dim] || (g.dim2 && !T.dic[g.dim2])) { $(id).closest('article').querySelector('.cab h3').textContent += ' — campo no disponible en esta pestaña'; return; }
+  const [tipoM, col] = g.med.split(':');
+  const nuevo = () => ({ n: 0, s: 0, c: 0 });
+  const sumar = (a, i) => { a.n += cuenta(i); if (col) { const v = T.datos[col]?.[i]; if (v != null) { a.s += v; a.c++; } } };
+  const val = a => (tipoM === 'n' ? a.n : tipoM === 'sum' ? a.s : a.c ? a.s / a.c : null);
+  const fmtV = g.como === 'pct' ? fP : tipoM === 'n' ? fN : MONEDA.has(col) ? fM : v => (v == null ? '—' : v.toLocaleString('es-NI', { maximumFractionDigits: 2 }));
+  const totA = agrupar(T, idx, null, nuevo, sumar).get('Total') || nuevo();
+  const totV = val(totA);
+  const como = v => (g.como === 'pct' && tipoM !== 'avg' ? pct(v, totV) : v);
+  const fmtK = (d, k) => (d === 'mes_desembolso' ? fMes(k) : ['primera_cuota', 'dia', 'fecha_promesa'].includes(d) ? fDia(k) : k);
+  const orden = (m, d) => {
+    const e = [...m.entries()];
+    if (d === 'mora') return e.sort((a, b) => TRAMOS.indexOf(a[0]) - TRAMOS.indexOf(b[0]));
+    if (CRONO.has(d) || d.startsWith('rango_')) return e.sort((a, b) => String(a[0]).localeCompare(String(b[0]), 'es', { numeric: true }));
+    return e.sort((a, b) => (val(b[1]) ?? -Infinity) - (val(a[1]) ?? -Infinity));
+  };
+  let grupos = orden(agrupar(T, idx, g.dim, nuevo, sumar), g.dim);
+  const top = +g.top;
+  if (top && grupos.length > top && !CRONO.has(g.dim)) grupos = grupos.slice(0, top);   // campos de tiempo: siempre todos
+  const claves = grupos.map(x => x[0]);
+  const etiquetas = claves.map(k => fmtK(g.dim, k));
+  const tip = a => [`${fN(a.n)} ${armDatos(D).u}${col ? ` · ${tipoM === 'avg' ? 'promedio' : 'suma'} ${fmtV(val(a))}` : ''}`, `${fP(pct(a.n, totA.n))} del total de ${armDatos(D).u}`];
+  const clic = k => (S.tab === 'cono' ? null : { [g.dim]: claves[k] });
+
+  if (!g.dim2) {
+    if (g.tipo === 'tabla') {
+      $(id).innerHTML = `<table><thead><tr><th>${esc(nomCampo(g.dim))}</th><th class="num">${tipoM === 'n' ? 'Cantidad' : esc(tituloArm(g, D).split(' por ')[0])}</th><th class="num">% del total</th><th class="num">${armDatos(D).u[0].toUpperCase() + armDatos(D).u.slice(1)}</th></tr></thead><tbody>`
+        + grupos.map(([k, a]) => `<tr><td>${esc(fmtK(g.dim, k))}</td><td class="num">${fmtV(como(val(a)))}</td><td class="num">${fP(pct(val(a), totV))}</td><td class="num">${fN(a.n)}</td></tr>`).join('')
+        + `<tr class="total"><td>Total</td><td class="num">${fmtV(como(totV))}</td><td class="num">${tipoM === 'avg' ? '—' : '100.0%'}</td><td class="num">${fN(totA.n)}</td></tr></tbody></table>`;
+      return;
+    }
+    const valores = grupos.map(([, a]) => como(val(a)));
+    if (g.tipo === 'lineas') return lineas(id, etiquetas, [{ t: tituloArm(g, D), c: SERIE[1], v: valores }], { fmt: fmtV, extra: it => tip(grupos[it[0].dataIndex][1]), clic });
+    const horizontal = !CRONO.has(g.dim);
+    return barrasSimples(id, etiquetas, valores, { color: SERIE[1], horizontal, fmt: fmtV, extra: it => tip(grupos[it[0].dataIndex][1]), clic });
+  }
+
+  // Con segundo campo: series (los 8 mayores; el resto en "Otros")
+  const m2 = orden(agrupar(T, idx, g.dim2, nuevo, sumar), g.dim2);
+  const natural = CRONO.has(g.dim2) || g.dim2 === 'mora' || g.dim2.startsWith('rango_');
+  const series = (natural && m2.length > 10 ? m2.slice(-10) : natural ? m2 : m2.slice(0, 8)).map(x => x[0]);
+  const hayOtros = m2.length > series.length && tipoM !== 'avg';
+  const celda = new Map();
+  for (const i of idx) {
+    const k1 = dv(T, g.dim, i) ?? 'SIN DATO'; if (!claves.includes(k1)) continue;
+    let k2 = dv(T, g.dim2, i) ?? 'SIN DATO'; if (!series.includes(k2)) { if (!hayOtros) continue; k2 = 'Otros'; }
+    const key = `${k1}\u0001${k2}`;
+    if (!celda.has(key)) celda.set(key, nuevo());
+    sumar(celda.get(key), i);
+  }
+  const todasS = hayOtros ? [...series, 'Otros'] : series;
+  const v = (k1, k2) => { const a = celda.get(`${k1}\u0001${k2}`); return a ? como(val(a)) : null; };
+  if (g.tipo === 'tabla') {
+    $(id).innerHTML = `<table><thead><tr><th>${esc(nomCampo(g.dim))} \\ ${esc(nomCampo(g.dim2))}</th>${todasS.map(s2 => `<th class="num">${esc(fmtK(g.dim2, s2))}</th>`).join('')}<th class="num">Total</th></tr></thead><tbody>`
+      + grupos.map(([k, a]) => `<tr><td>${esc(fmtK(g.dim, k))}</td>${todasS.map(s2 => `<td class="num">${v(k, s2) == null ? '' : fmtV(v(k, s2))}</td>`).join('')}<td class="num tot">${fmtV(como(val(a)))}</td></tr>`).join('')
+      + '</tbody></table>';
+    return;
+  }
+  const sets = todasS.map((s2, j) => ({ t: String(fmtK(g.dim2, s2)), c: s2 === 'Otros' ? GRIS : PALETA[j % PALETA.length], v: claves.map(k => v(k, s2)) }));
+  const ley = `<div class="leyenda">${sets.map(x => `<span><i style="background:${x.c}"></i>${esc(x.t)}</span>`).join('')}</div>`;
+  $(id).closest('.lienzo').insertAdjacentHTML('beforebegin', ley);
+  const etiqueta = c => { const a = celda.get(`${claves[c.dataIndex]}\u0001${todasS[c.datasetIndex]}`); return `${c.dataset.label}: ${fmtV(c.raw)}${a ? ` · ${fN(a.n)} ${armDatos(D).u} · ${fP(pct(a.n, totA.n))} del total` : ''}`; };
+  const clic2 = (k, j) => (S.tab === 'cono' ? null : j == null || todasS[j] === 'Otros' ? { [g.dim]: claves[k] } : { [g.dim]: claves[k], [g.dim2]: todasS[j] });
+  if (g.tipo === 'lineas') return lineas(id, etiquetas, sets, { fmt: fmtV, etiqueta, clic: clic2 });
+  if (g.tipo === 'apiladas' && tipoM !== 'avg') return barrasApiladas(id, etiquetas, sets, { horizontal: !CRONO.has(g.dim), fmt: fmtV, etiqueta, clic: clic2 });
+  return barrasAgrupadas(id, etiquetas, sets, { fmt: fmtV, clic: clic2 });
+}
+
+$('farmar').addEventListener('submit', e => {
+  e.preventDefault();
+  const g = { tipo: $('aTipo').value, dim: $('aDim').value, dim2: $('aDim2').value, med: $('aMed').value, como: $('aComo').value, top: $('aTop').value };
+  if (g.dim2 === g.dim) g.dim2 = '';
+  S.armForm = { ...(S.armForm || {}), [S.tab]: g };
+  guardarArm([...leerArm(), g]);
+  pintarArmar(S.datos[S.tab]);
+  $('misGraficos').lastElementChild?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+});
+$('misGraficos').addEventListener('click', e => {
+  const b = e.target.closest('[data-quitarg]');
+  if (!b) return;
+  const l = leerArm(); l.splice(+b.dataset.quitarg, 1); guardarArm(l);
+  pintarArmar(S.datos[S.tab]);
+});
+
 // ---------- Navegación ----------
 async function abrir(tab) {
   S.tab = tab;
@@ -775,21 +917,77 @@ async function abrir(tab) {
 function pintar() {
   const D = S.datos[S.tab];
   $('pivCaja').hidden = true;   // el cuadro mes × tramo de mora solo lo pintan Cosecha y Cartera Activa
-  if (!D) { $('kpis').innerHTML = $('graficos').innerHTML = ''; $('tablaCaja').hidden = true; $('preguntas').hidden = !CFG.IA_CLAUDE; return; }
+  if (!D) { $('kpis').innerHTML = $('graficos').innerHTML = ''; $('tablaCaja').hidden = true; $('armarCaja').hidden = true; $('preguntas').hidden = !CFG.IA_CLAUDE; return; }
   pintarFiltros(D);
   ({ cosecha: pintarCosecha, cartera_activa: pintarCartera, primeros_pagos: pintarPrimeros, cono: pintarCono })[S.tab](D);
+  pintarArmar(D);
+  $('btnDescargar').title = S.tab === 'cono' ? 'Descarga la base completa de créditos'
+    : 'Descarga en Excel los créditos de esta pestaña con los filtros aplicados';
   pintarGuiada();
 }
 
 $('tabs').addEventListener('click', e => { const b = e.target.closest('button[data-tab]'); if (b) abrir(b.dataset.tab); });
 
 // ---------- Descarga ----------
+// Con filtros: solo las filas filtradas de la pestaña, con las mismas columnas del Excel completo (se arma en el navegador)
+let BASE = null;
+async function cargarBase() {
+  if (BASE) return BASE;
+  if (LOCAL) BASE = await (await fetch('local/base.json', { cache: 'no-store' })).json();
+  else {
+    const blob = ok(await sb.storage.from(CFG.BUCKET).download('descargas/base.json.gz'));
+    BASE = JSON.parse(await new Response(blob.stream().pipeThrough(new DecompressionStream('gzip'))).text());
+  }
+  return BASE;
+}
+const cargarScript = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('no se pudo cargar el generador de Excel')); document.head.append(s); });
+
+async function descargarFiltrado(D) {
+  const idx = filas(D, filtrosActivos());
+  const [B] = await Promise.all([cargarBase(), window.XLSX ? null : cargarScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js')]);
+  const filasB = idx.map(i => D.fila[i]);
+  const aoa = [B.cols.map(c => c.n)];
+  for (const r of filasB) {
+    aoa.push(B.cols.map((c, j) => {
+      const v = B.datos[j][r];
+      if (v == null) return null;
+      if (c.t === 's') return c.dic[v];
+      if (c.t === 'd') {   // número de serie de Excel (sin zona horaria: la fecha queda exacta)
+        const [a, m, d] = v.slice(0, 10).split('-').map(Number), [h, mi, se] = v.length > 10 ? v.slice(11).split(':').map(Number) : [0, 0, 0];
+        return (Date.UTC(a, m - 1, d, h, mi, se) - Date.UTC(1899, 11, 30)) / 864e5;
+      }
+      return v;
+    }));
+  }
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  B.cols.forEach((c, j) => {
+    if (c.t !== 'd') return;
+    const conHora = B.datos[j].some(v => v && v.length > 10);
+    for (let r = 1; r < aoa.length; r++) { const cel = ws[XLSX.utils.encode_cell({ r, c: j })]; if (cel) cel.z = conHora ? 'yyyy-mm-dd hh:mm' : 'yyyy-mm-dd'; }
+  });
+  ws['!freeze'] = { xSplit: 1, ySplit: 1 };
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Cosecha');
+  const tabN = PESTANAS.find(p => p.id === S.tab)?.t || S.tab;
+  XLSX.writeFile(wb, `Base Cosechas vs Cobro - ${tabN} (filtrada).xlsx`, { compression: true });
+  return filasB.length;
+}
+
 $('btnDescargar').addEventListener('click', async () => {
+  const btn = $('btnDescargar'), D = S.datos[S.tab];
+  const filtrada = D && S.tab !== 'cono' && D.fila && (Object.keys(filtrosActivos()).length || S.tab !== 'cosecha');
   try {
+    if (filtrada) {
+      btn.disabled = true; btn.textContent = 'Preparando Excel…';
+      const n = await descargarFiltrado(D);
+      aviso(`Se descargaron ${fN(n)} créditos de ${PESTANAS.find(p => p.id === S.tab)?.t} con los filtros aplicados.`);
+      return;
+    }
     if (LOCAL) { location.href = 'local/Base Cosechas vs Cobro.xlsx'; return; }
     const { signedUrl } = ok(await sb.storage.from(CFG.BUCKET).createSignedUrl('descargas/base.xlsx', 120, { download: 'Base Cosechas vs Cobro.xlsx' }));
     location.href = signedUrl;
   } catch (err) { aviso(`No se pudo descargar: ${err.message}`, true); }
+  finally { btn.disabled = false; btn.textContent = 'Descargar data'; }
 });
 
 // ---------- Actualizar ----------

@@ -185,3 +185,10 @@ table.piv td.tot { font-weight: 700; }
 .mpanel .mop { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 5px; font-size: 13px; color: var(--texto); font-weight: 400; cursor: pointer; white-space: nowrap; }
 .mpanel .mop:hover { background: var(--verde-10); }
 @media (max-width: 760px) { .multi, .multi .mbtn { width: 100%; max-width: none; } .mpanel { max-width: none; width: 100%; } }
+
+/* Arme su gráfico o tabla */
+.armar { border-top: 4px solid var(--cielo); }
+.farmar { margin-bottom: 8px; }
+.armar .graficos { margin: 10px 0 0; }
+.armar .graf { box-shadow: none; border: 1px solid var(--borde); }
+.armar .graf .tabla-caja { max-height: 420px; }

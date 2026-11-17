@@ -50,6 +50,7 @@ def guardar_local(res: dict):
     (LOCAL / "meta.json").write_bytes(salidas.a_json(res["meta"]))
     (LOCAL / "resumen_ia.json").write_bytes(salidas.a_json(res["ia"]))
     (LOCAL / "Base Cosechas vs Cobro.xlsx").write_bytes(salidas.excel(res["base"]))
+    (LOCAL / "base.json").write_bytes(salidas.a_json(salidas.base_json(res["base"])))
     logging.info("Escrito %s", LOCAL)
 
 
@@ -72,6 +73,8 @@ def actualizar_nube(cfg: dict, sb, pedido: int | None = None, forzar: set[str] |
         for nombre, contenido in res["pestanas"].items():
             sb.subir(f"pestanas/{nombre}.json.gz", salidas.comprimir(salidas.a_json(contenido)), "application/gzip")
         sb.subir("ia/resumen.json.gz", salidas.comprimir(salidas.a_json(res["ia"])), "application/gzip")
+        # base completa para la descarga filtrada desde la app (mismas columnas del Excel)
+        sb.subir("descargas/base.json.gz", salidas.comprimir(salidas.a_json(salidas.base_json(res["base"]))), "application/gzip")
         sb.subir("descargas/base.xlsx", salidas.excel(res["base"]),
                  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         sb.rpc("cvc_registrar_carga", {"p_meta": json.loads(salidas.a_json(res["meta"]))})

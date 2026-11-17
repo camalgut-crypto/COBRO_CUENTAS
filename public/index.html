@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=2026111701">
+  <link rel="stylesheet" href="styles.css?v=2026111703">
 </head>
 <body>
   <div id="login" class="login" hidden>
@@ -59,6 +59,15 @@
         <div class="chips" id="chips" hidden></div>
         <section class="kpis" id="kpis"></section>
         <section class="graficos" id="graficos"></section>
+        <section id="armarCaja" class="panel armar" hidden>
+          <div class="panel-tit">
+            <h3>Arme su gráfico o tabla</h3>
+            <span class="small muted">Elija los campos y la medida. Usa los filtros aplicados en la pestaña y queda guardado en este navegador para su usuario.</span>
+          </div>
+          <form id="farmar" class="filtros farmar"></form>
+          <p id="armVacio" class="small muted">Todavía no ha armado ninguno. Ejemplo: Tipo «Barras apiladas», Agrupar por «Producto Madre», Separar por «Mora Actual», Medida «Suma de Saldo pagaré inicial».</p>
+          <div class="graficos" id="misGraficos"></div>
+        </section>
         <section id="pivCaja" class="panel" hidden>
           <div class="panel-tit">
             <h3 id="pivTit"></h3>
@@ -120,6 +129,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.99.3/dist/umd/supabase.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <script src="config.js?v=2026111402"></script>
-  <script src="app.js?v=2026111702"></script>
+  <script src="app.js?v=2026111703"></script>
 </body>
 </html>
