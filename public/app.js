@@ -46,6 +46,8 @@ const DIM = {
   producto_madre: 'Producto Madre', resultado_motor: 'Resultado motor', status_promesa_pago: 'Status promesa',
   dealer_genesis: 'Dealer', suc_dealer: 'Sucursal dealer', con_excepcion: 'Con Excepcion', con_prima: 'Con Prima',
   dia_pago: 'Día de pago', tipo_salario: 'Tipo salario', primera_cuota: 'Primera cuota',
+  fpd_estado: 'Estado FPD', rg_predictivo: 'Regla: predictivo (día 0 a 2)', rg_fila: 'Regla: llamada de gestor (día 1 a 2)',
+  rg_gestor: 'Regla: alguna gestión de gestor', rg_referencias: 'Regla: referencias (desde día 5)', rg_visita: 'Regla: visita de campo',
 };
 // Filtros definidos por Riesgo (17-nov-2026): los 7 primeros siempre visibles; desde Política HIT, en "Más filtros"
 const FILTROS_PRINCIPALES = ['producto_madre', 'clasificacion', 'producto_comercial', 'mes_desembolso', 'canal',
@@ -662,7 +664,8 @@ function pintarPrimeros(D) {
   const vp = S.verPor.pp_dim || 'sucursal';
   $('graficos').innerHTML =
     tarjeta('gPPDia', 'Primeros pagos por fecha de vencimiento', 'Créditos según el día en que vence su primera cuota y cómo están hoy.', { ancho: true, leyenda: PP_ESTADOS.map(e => [e[0], e[2]]) })
-    + tarjeta('gPPDim', '% en mora sobre los vencidos', 'Los 15 grupos con más créditos vencidos (mínimo 5).', { ancho: true, alto: true, verPor: { id: 'pp_dim', D, valor: vp } });
+    + tarjeta('gPPDim', '% en mora sobre los vencidos', 'Los 15 grupos con más créditos vencidos (mínimo 5).', { ancho: true, alto: true, verPor: { id: 'pp_dim', D, valor: vp } })
+    + (D.dic.rg_gestor ? tarjeta('gPPReglas', 'Cumplimiento de las reglas de cobro FPD', 'Créditos FPD que no pagaron a tiempo, según las gestiones registradas en el cono (MCCollect). Clic en «No cumple» para filtrar y descargar la lista.', { ancho: true, leyenda: [['Cumple', SERIE[0]], ['No cumple', SERIE[2]]] }) : '');
   const porDia = agrupar(D, idx, 'primera_cuota', n0, sm);
   // Todos los días del mes en el eje: un día sin barra es un día sin primeras cuotas (no un dato perdido)
   const cuotas = (D.dic.primera_cuota || []).slice().sort();
@@ -683,12 +686,36 @@ function pintarPrimeros(D) {
     extra: it => { const a = r[it[0].dataIndex][2]; return [`${fN(a.venc)} vencidos · ${fN(a.mora)} en mora · ${fM(a.s.mora || 0)} saldo pagaré en mora`, `${fN(a.n)} créditos · ${fM(a.spag)} · ${fP(pct(a.n, tot.n))} del total`]; },
     clic: k => ({ [vp]: r[k][0] }),
   });
+  if (D.dic.rg_gestor) reglasFPD(D, idx);
   const tp = S.verPor.tabla_primeros_pagos || 'promotor';
   tabla('Detalle de primeros pagos', DIMS_VER_POR.filter(d => D.dic[d]).map(d => [d, DIM[d]]), tp, [
     { t: 'Créditos', v: a => a.n, f: fN }, { t: 'Vencidos', v: a => a.venc, f: fN }, { t: 'Pagaron', v: a => a.pago, f: fN },
     { t: 'En mora', v: a => a.mora, f: fN }, { t: 'Sin pago registrado', v: a => a.sinpago, f: fN }, { t: 'Por vencer', v: a => a.porvencer, f: fN },
     { t: '% mora s/ vencidos', v: a => pct(a.mora, a.venc), f: fP, alerta: a => a.venc >= 5 && pct(a.mora, a.venc) > pct(tot.mora, tot.venc) * 1.5 },
   ], agrupar(D, idx, tp, n0, sm), tot);
+}
+
+// Reglas de cobro FPD (documento REGLAS DE COBRO FPD): las mide el proceso por crédito; aquí se cuentan con los filtros
+const REGLAS_FPD = [['rg_predictivo', 'Predictivo Wolkvox (día 0 a 2)'], ['rg_fila', 'Fila MCC: llamada al cliente (día 1 a 2)'],
+  ['rg_gestor', 'Alguna gestión de gestor desde el día 1'], ['rg_referencias', 'Referencias desde el día 5 de mora'],
+  ['rg_visita', 'Visita de campo (saldo ≥ C$12,000)']];
+function reglasFPD(D, idx) {
+  const c = REGLAS_FPD.map(() => ({ si: 0, no: 0, sSi: 0, sNo: 0 }));
+  let mora = 0;
+  for (const i of idx) {
+    if (dv(D, 'fpd_estado', i) === 'Entró en mora') mora++;
+    REGLAS_FPD.forEach(([k], j) => { const v = dv(D, k, i); const s = mv(D, 'saldo_doc', i); if (v === 'Cumple') { c[j].si++; c[j].sSi += s; } else if (v === 'No cumple') { c[j].no++; c[j].sNo += s; } });
+  }
+  const etq = REGLAS_FPD.map(([, t], j) => `${t} · ${fN(c[j].si + c[j].no)} créditos`);
+  barrasApiladas('gPPReglas', etq, [
+    { t: 'Cumple', c: SERIE[0], v: c.map(x => pct(x.si, x.si + x.no)) },
+    { t: 'No cumple', c: SERIE[2], v: c.map(x => pct(x.no, x.si + x.no)) },
+  ], {
+    horizontal: true, cien: true,
+    etiqueta: x => { const a = c[x.dataIndex], si = x.datasetIndex === 0; return `${x.dataset.label}: ${fP(x.raw)} · ${fN(si ? a.si : a.no)} créditos · saldo ${fM(si ? a.sSi : a.sNo)}`; },
+    extra: () => [`${fN(mora)} créditos FPD entraron en mora (con los filtros aplicados)`, 'SMS y Blaster no se miden: MCCollect no los registra a diario.'],
+    clic: (k, g) => (g == null ? null : { [REGLAS_FPD[k][0]]: g === 0 ? 'Cumple' : 'No cumple' }),
+  });
 }
 
 // ---------- Pestaña Cono de cobranza ----------

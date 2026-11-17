@@ -26,6 +26,7 @@ MEDIDAS = ["monto_des", "saldopagare", "saldo_doc", "dias_mora", "cuotas_vencida
            "valor_cuota", "salario", "score", "tasainteres", "monto_ult_pago", "capacidad_pago", "ingreso_bruto", "edad",
            "multiplicador", "salario_inss", "porcentaje_financiar", "razon_cuota_ingreso", "monto_aprobado_motor",
            "intentos", "gestionada", "contacto", "rpc", "promesa", "monto_promesa", "monto_pagado"]
+REGLAS_FPD = ["fpd_estado", "rg_predictivo", "rg_fila", "rg_gestor", "rg_referencias", "rg_visita"]
 PESTANAS = ("cosecha", "cartera_activa", "primeros_pagos", "cono")
 MORA30 = ["B2", "B3", "B4", "B5", "B6", "B7"]
 MORA90 = ["B4", "B5", "B6", "B7"]
@@ -80,7 +81,8 @@ def pestañas(b: pd.DataFrame, g: pd.DataFrame, hoy: date) -> dict[str, dict]:
         # "fila" = número de fila en la base completa: la descarga filtrada toma esas filas de descargas/base.json.gz
         "cosecha": _columnar(b, DIMS, _med(b), {"fila": [int(i) for i in b.index]}),
         "cartera_activa": _columnar(activa, DIMS, _med(activa), {"fila": [int(i) for i in activa.index]}),
-        "primeros_pagos": _columnar(pp, DIMS + ["primera_cuota"], _med(pp), {"fila": [int(i) for i in pp.index]}),
+        "primeros_pagos": _columnar(pp, DIMS + ["primera_cuota"] + REGLAS_FPD, _med(pp) + ["dias_mora_fpd"],
+                                    {"fila": [int(i) for i in pp.index]}),
         "cono": {
             "gestiones": _agrupar(g, ["dia", "usuario", "descripcion_accion", "descripcion_resultado", "tipo_cartera",
                                       "de_la_cosecha"], ["gestionada", "contacto", "rpc", "promesa"]),

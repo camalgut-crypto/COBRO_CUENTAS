@@ -13,6 +13,8 @@ from datetime import date
 import numpy as np
 import pandas as pd
 
+from . import reglas_fpd
+
 NULOS = {"NULL", "", "nan", "None", "#N/A"}
 
 
@@ -378,6 +380,8 @@ def construir(d: dict[str, pd.DataFrame], hoy: date | None = None) -> tuple[pd.D
         [~b["en_cartera"], b["dias_mora"] > 0, pagado, b["primera_cuota"] > hoy],
         ["Cancelado", "En mora", "Pagó", "Por vencer"], "Vencida sin pago registrado")
     b["primera_cuota_vencida"] = b["primera_cuota"] <= hoy
+    # Cumplimiento de las reglas de cobro FPD (solo créditos con primera cuota en el mes)
+    b = reglas_fpd.evaluar(b, g, hoy)
 
     # Textos vacíos de dimensiones → etiqueta visible
     for c in ["sucursal", "canal", "sucursal_promotor", "promotor", "categorizacion", "tipo_credito", "medio_captacion",
