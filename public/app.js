@@ -495,9 +495,10 @@ const TRAMOS = ['B0', 'B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'CANCELADO'];
 const PIV_MED = { spag: 'Saldo pagaré inicial', n: 'Cantidad de créditos', saldo: 'Saldo actual', pct: '% del saldo pagaré del mes' };
 
 function pivote(D, idx, titulo) {
-  const caja = $('pivCaja');
-  caja.hidden = !veTablas();
-  if (caja.hidden) return;
+  // Gerencia (solo gráficos) también ve el cuadro, pero solo como % del saldo pagaré de cada mes (fila), sin montos
+  const soloPct = !veTablas();
+  $('pivCaja').hidden = false;
+  $('pivMed').closest('label').hidden = soloPct;
   const m = new Map(), tot = {};
   const nuevo = () => Object.fromEntries(TRAMOS.map(t => [t, { n: 0, spag: 0, saldo: 0 }]));
   for (const i of idx) {
@@ -511,7 +512,7 @@ function pivote(D, idx, titulo) {
   const sumar = filasR => { const s = nuevo(); for (const r of filasR) for (const t of TRAMOS) for (const k of ['n', 'spag', 'saldo']) s[t][k] += r[t][k]; return s; };
   const totalFila = r => cols.reduce((a, t) => ({ n: a.n + r[t].n, spag: a.spag + r[t].spag, saldo: a.saldo + r[t].saldo }), { n: 0, spag: 0, saldo: 0 });
   const general = sumar([...m.values()]), tg = totalFila(general);
-  const med = S.pivMed;
+  const med = soloPct ? 'pct' : S.pivMed;
   const valor = (c, fila) => (med === 'pct' ? pct(c.spag, fila.spag) : c[med]);
   const fmt = v => (med === 'pct' ? fP(v) : v ? (med === 'n' ? fN(v) : v.toLocaleString('es-NI', { minimumFractionDigits: 2, maximumFractionDigits: 2 })) : '');
   const tip = c => `${fN(c.n)} créditos · ${fM(c.spag)} saldo pagaré · ${fP(pct(c.spag, tg.spag))} del total`;
