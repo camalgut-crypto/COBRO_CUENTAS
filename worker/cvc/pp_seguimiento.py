@@ -35,6 +35,8 @@ FERIADOS = pd.to_datetime(['2025-12-08', '2025-12-25',
                            '2027-09-14', '2027-09-15', '2027-12-08', '2027-12-25'])
 BDAYS = pd.bdate_range('2025-08-01', '2027-12-31', freq='C', weekmask='Mon Tue Wed Thu Fri Sat', holidays=FERIADOS)
 SALDO_VISITA = 12000
+CANALES = {"sms": ["SMS"], "wap": ["WHATSAPP"], "llam": ["LLAMADA_CLIENTE", "LLAMADA_REFERENCIA"], "pred": ["PREDICTIVO"],
+           "vis": ["VISITA", "ENVIO_VISITA"]}
 DIMS = ["producto_madre", "clasificacion", "producto_comercial", "mes_desembolso", "canal", "sucursal_promotor", "sucursal",
         "politica_hit", "tipo_credito_legal", "tipo_salario", "rango_antig_cliente", "rango_antig_laboral", "rango_capacidad",
         "rango_desembolso", "rango_edad", "rango_estabilidad", "rango_ingreso", "rango_multiplicador", "rango_salario",
@@ -147,8 +149,14 @@ def extraer(cfg: dict, u: pd.DataFrame, meses: list[str], cts: dict, hoy: pd.Tim
 
     # 2) Gestiones por mes calendario; el mes en curso y el anterior siempre se vuelven a pedir
     t1 = reloj.time()
-    ges = _leer("gestiones", ["credito", "fa", "acc", "res", "usuario", "fprom", "monto_promesa", "contacto", "rpc", "promesa", "mes"])
+    ges = _leer("gestiones", ["credito", "fa", "acc", "res", "usuario", "fprom", "monto_promesa", "gestionada", "contacto", "rpc", "promesa", "mes"])
+    if "gestionada" not in ges:   # caché anterior sin la marca de intento: se vuelve a pedir todo
+        ges = ges.iloc[:0].assign(gestionada=None); ges_hechos_reset = True
+    else:
+        ges_hechos_reset = False
     ges_hechos = _leer("gestiones_pares", ["credito", "mes"])
+    if ges_hechos_reset:
+        ges_hechos = ges_hechos.iloc[:0]
     for df in (ges, ges_hechos):
         df["credito"] = df["credito"].astype(object); df["mes"] = df["mes"].astype(object)
     mes_hoy = hoy.to_period("M")
@@ -170,9 +178,9 @@ def extraer(cfg: dict, u: pd.DataFrame, meses: list[str], cts: dict, hoy: pd.Tim
         for m in sorted(falta["mes"].unique()):
             p = pd.Period(m)
             cur.execute(f"""SELECT REPLACE(RTRIM(G.credito), '_', ' ') credito, G.fecha_actividad fa, RTRIM(G.codigo_accion) acc,
-                   RTRIM(G.codigo_resultado) res, G.usuario, G.fecha_promesa fprom, G.monto_promesa, C.contacto, C.rpc, C.promesa
+                   RTRIM(G.codigo_resultado) res, G.usuario, G.fecha_promesa fprom, G.monto_promesa, C.gestionada, C.contacto, C.rpc, C.promesa
                 FROM [MCCOLLECT].[dbo].[th_mccollect_gestiones_diarias_regional] G
-                OUTER APPLY (SELECT TOP 1 contacto, rpc, promesa FROM [MCCOLLECT].[dbo].[t_mccollect_codigos_gestiones] K
+                OUTER APPLY (SELECT TOP 1 gestionada, contacto, rpc, promesa FROM [MCCOLLECT].[dbo].[t_mccollect_codigos_gestiones] K
                              WHERE K.id_concatenado = CONCAT(G.codigo_accion, G.codigo_resultado)) C
                 WHERE G.pais = 'Nicaragua' AND G.fecha_actividad >= '{p.start_time:%Y-%m-%d}' AND G.fecha_actividad < '{(p + 1).start_time:%Y-%m-%d}'
                   AND REPLACE(RTRIM(G.credito), '_', ' ') IN (SELECT credito FROM #g WHERE mes = '{m}')""")
@@ -269,7 +277,7 @@ def calcular(u: pd.DataFrame, car: pd.DataFrame, ges: pd.DataFrame, cen: pd.Data
     G = ges.copy()
     G["fa"] = pd.to_datetime(G["fa"]); G["d"] = G["fa"].dt.normalize()
     G["canal"] = _canal(G["acc"].fillna("").str.strip(), G["res"].fillna("").str.strip())
-    for c in ["contacto", "rpc", "promesa"]:
+    for c in ["gestionada", "contacto", "rpc", "promesa"]:
         G[c] = pd.to_numeric(G[c], errors="coerce").fillna(0)
     G["fprom"] = pd.to_datetime(G["fprom"], errors="coerce").dt.normalize()
     G = G.merge(u[["credito", "D", "due_b"]], on="credito")
@@ -408,6 +416,30 @@ def calcular(u: pd.DataFrame, car: pd.DataFrame, ges: pd.DataFrame, cen: pd.Data
         aplica = mora1 & (cvu >= 1) & (pd.to_numeric(out["credito"].map(saldo_c), errors="coerce").fillna(0) >= SALDO_VISITA)
         v = Gk[Gk["canal"].isin(["ENVIO_VISITA", "VISITA"])].merge(pd.DataFrame({"credito": out["credito"], "_u": umbral}), on="credito")
         out[pre + "r_vis"] = np.where(aplica, out["credito"].isin(set(v.loc[v["rel"] >= v["_u"], "credito"])).astype(float), np.nan)
+
+        # Embudo de cobranza de las cuentas en mora (desde el día 1 de mora hasta el corte) y efectividad por canal.
+        # Todas las gestiones cuentan aquí (también SMS y predictivo): se quiere ver qué canal llega a RPC, promesa y pago.
+        Ge = Gk[Gk["relb"] >= 1].copy()
+        Ge["_cump"] = False
+        if Ge["prom"].any():
+            x = Ge[Ge["prom"]].reset_index()[["index", "credito", "b", "fpb"]].merge(P[["credito", "pb"]], on="credito")
+            Ge.loc[Ge.index.isin(set(x[(x["pb"] >= x["b"]) & (x["pb"] <= x["fpb"] + 1)]["index"])), "_cump"] = True
+        en_mora = mora1
+        def marca(df):
+            return np.where(en_mora, out["credito"].isin(set(df["credito"])).astype(float), np.nan)
+        out[pre + "e_gest"] = marca(Ge)
+        out[pre + "e_int"] = marca(Ge[Ge["gestionada"] == 1])
+        out[pre + "e_con"] = marca(Ge[Ge["contacto"] == 1])
+        out[pre + "e_rpc"] = marca(Ge[Ge["rpc"] == 1])
+        out[pre + "e_prom"] = marca(Ge[Ge["prom"]])
+        out[pre + "e_cump"] = marca(Ge[Ge["_cump"]])
+        out[pre + "e_pago"] = np.where(en_mora & incl, (out[pre + "pd"] == 0).astype(float), np.nan)
+        for ch, canales in CANALES.items():
+            gc = Ge[Ge["canal"].isin(canales)]
+            out[f"{pre}k_{ch}_u"] = marca(gc)
+            out[f"{pre}k_{ch}_r"] = marca(gc[gc["rpc"] == 1])
+            out[f"{pre}k_{ch}_p"] = marca(gc[gc["prom"]])
+            out[f"{pre}k_{ch}_c"] = marca(gc[gc["_cump"]])
 
         # Cendoc: rodamiento a la fecha de corte
         disp = {m: fechas_cendoc[fechas_cendoc <= cts[m]["foto_" + k]] for m in meses}

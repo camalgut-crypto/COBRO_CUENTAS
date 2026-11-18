@@ -16,6 +16,7 @@ const PESTANAS = [
   { id: 'cartera_activa', t: 'Cartera Activa', roles: ['admin', 'gerencia', 'cobro'] },
   { id: 'primeros_pagos', t: 'Primeros Pagos', roles: ['admin', 'gerencia', 'cobro', 'comercial'] },
   { id: 'pp_seguimiento', t: 'Primeros Pagos – Seguimiento', roles: ['admin', 'gerencia', 'cobro', 'comercial'] },
+  { id: 'pp_cosecha', t: 'Primeros Pagos – Cosecha', roles: ['admin', 'gerencia', 'cobro', 'comercial'] },
   { id: 'cono', t: 'Cono de cobranza', roles: ['admin', 'gerencia'] },
 ];
 const slug = s => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
@@ -154,10 +155,10 @@ async function leerMeta() {
 
 async function bajar(tab) {
   if (S.datos[tab]) return S.datos[tab];
-  if (tab === 'pp_seguimiento') {   // viaja dentro del archivo de Primeros Pagos (mismos permisos)
+  if (tab === 'pp_seguimiento' || tab === 'pp_cosecha') {   // viajan dentro del archivo de Primeros Pagos (mismos permisos)
     const p = await bajar('primeros_pagos');
     if (!p.seguimiento) throw new Error('el seguimiento todavía no se ha generado; se incluye en la próxima actualización');
-    return (S.datos[tab] = p.seguimiento);
+    return (S.datos[tab] = p.seguimiento);   // las dos pestañas comparten los mismos datos
   }
   let d;
   if (LOCAL) d = await (await fetch(`local/${tab}.json`, { cache: 'no-store' })).json();
@@ -672,7 +673,8 @@ function pintarPrimeros(D) {
   const vp = S.verPor.pp_dim || 'sucursal';
   $('graficos').innerHTML =
     tarjeta('gPPDia', 'Primeros pagos por fecha de vencimiento', 'Créditos según el día en que vence su primera cuota y cómo están hoy.', { ancho: true, leyenda: PP_ESTADOS.map(e => [e[0], e[2]]) })
-    + tarjeta('gPPDim', '% en mora sobre los vencidos', 'Los 15 grupos con más créditos vencidos (mínimo 5).', { ancho: true, alto: true, verPor: { id: 'pp_dim', D, valor: vp } })
+    + tarjeta('gPPDim', '% en mora sobre los vencidos (saldo pagaré)', 'Saldo pagaré en mora ÷ saldo pagaré de las primeras cuotas ya vencidas. Los 15 grupos con más saldo vencido (mínimo 5 cuentas).', { ancho: true, alto: true, verPor: { id: 'pp_dim', D, valor: vp } })
+    + (veTablas() && D.dic.nombre_deudor ? `<article class="graf ancho"><div class="cab"><h3>Detalle de las cuentas en mora</h3><span class="small muted" id="ppMoraNota"></span></div><div class="tabla-caja" id="ppMora"></div></article>` : '')
     + (D.dic.rg_gestor ? tarjeta('gPPReglas', 'Cumplimiento de las reglas de cobro FPD', 'Créditos FPD que no pagaron a tiempo, según las gestiones registradas en el cono (MCCollect). Clic en «No cumple» para filtrar y descargar la lista.', { ancho: true, leyenda: [['Cumple', SERIE[0]], ['No cumple', SERIE[2]]] }) : '');
   const porDia = agrupar(D, idx, 'primera_cuota', n0, sm);
   // Todos los días del mes en el eje: un día sin barra es un día sin primeras cuotas (no un dato perdido)
@@ -687,14 +689,17 @@ function pintarPrimeros(D) {
     extra: it => { const a = ad(it[0].dataIndex); return a.n ? [`Total del día: ${fN(a.n)} créditos · ${fM(a.spag)} saldo pagaré`, `${fP(pct(a.n, tot.n))} de las primeras cuotas del mes`] : ['Sin primeras cuotas este día']; },
     clic: (k, g) => (porDia.has(dias[k]) ? (g == null ? { primera_cuota: dias[k] } : { primera_cuota: dias[k], estado_primer_pago: PP_ESTADOS[g][0] }) : null),
   });
-  const r = [...agrupar(D, idx, vp, n0, sm).entries()].filter(([, a]) => a.venc >= 5).sort((a, b) => b[1].venc - a[1].venc).slice(0, 15)
-    .map(([k, a]) => [k, pct(a.mora, a.venc), a]).sort((a, b) => b[1] - a[1]);
+  // en saldo pagaré: saldo en mora ÷ saldo de las primeras cuotas ya vencidas (grupos con 5 o más cuentas vencidas)
+  const sVenc = a => a.spag - (a.s.porvencer || 0);
+  const r = [...agrupar(D, idx, vp, n0, sm).entries()].filter(([, a]) => a.venc >= 5).sort((a, b) => sVenc(b[1]) - sVenc(a[1])).slice(0, 15)
+    .map(([k, a]) => [k, pct(a.s.mora || 0, sVenc(a)), a]).sort((a, b) => b[1] - a[1]);
   barrasSimples('gPPDim', r.map(x => vp === 'mes_desembolso' ? fMes(x[0]) : x[0]), r.map(x => x[1]), {
     color: SERIE[2], fmt: fP,
-    extra: it => { const a = r[it[0].dataIndex][2]; return [`${fN(a.venc)} vencidos · ${fN(a.mora)} en mora · ${fM(a.s.mora || 0)} saldo pagaré en mora`, `${fN(a.n)} créditos · ${fM(a.spag)} · ${fP(pct(a.n, tot.n))} del total`]; },
+    extra: it => { const a = r[it[0].dataIndex][2]; return [`Saldo pagaré en mora ${fM(a.s.mora || 0)} de ${fM(sVenc(a))} vencido`, `${fN(a.mora)} de ${fN(a.venc)} cuentas vencidas en mora`, `${fP(pct(sVenc(a), tot.spag - (tot.s.porvencer || 0)))} del saldo vencido total`]; },
     clic: k => ({ [vp]: r[k][0] }),
   });
   if (D.dic.rg_gestor) reglasFPD(D, idx);
+  if (veTablas() && D.dic.nombre_deudor) detalleMoraPP(D, idx);
   const tp = S.verPor.tabla_primeros_pagos || 'promotor';
   tabla('Detalle de primeros pagos', DIMS_VER_POR.filter(d => D.dic[d]).map(d => [d, DIM[d]]), tp, [
     { t: 'Créditos', v: a => a.n, f: fN }, { t: 'Vencidos', v: a => a.venc, f: fN }, { t: 'Pagaron', v: a => a.pago, f: fN },
@@ -703,6 +708,19 @@ function pintarPrimeros(D) {
   ], agrupar(D, idx, tp, n0, sm), tot);
 }
 
+
+function detalleMoraPP(D, idx) {
+  const L = idx.filter(i => ['En mora', 'Vencida sin pago registrado'].includes(dv(D, 'estado_primer_pago', i)))
+    .sort((a, b) => mv(D, 'saldopagare', b) - mv(D, 'saldopagare', a));
+  const tot = L.reduce((s, i) => s + mv(D, 'saldopagare', i), 0);
+  $('ppMoraNota').textContent = `${fN(L.length)} cuentas · saldo pagaré ${fM(tot)} · ordenadas por saldo pagaré. Con los filtros aplicados; «Descargar data» baja la lista completa.`;
+  const v = (c, i) => esc(dv(D, c, i) ?? '');
+  $('ppMora').innerHTML = `<table><thead><tr><th>Sucursal</th><th>Crédito</th><th>Desembolso</th><th>Promotor</th><th>Cliente</th><th class="num">Días mora</th><th>Producto</th><th class="num">Saldo pagaré</th><th class="num">Valor cuota</th><th class="num">Recaudo total</th><th>Teléfono</th><th>Fecha promesa</th><th>Cargo</th></tr></thead><tbody>`
+    + L.slice(0, 500).map(i => `<tr><td>${v('sucursal', i)}</td><td>${v('credito', i)}</td><td>${fDia(dv(D, 'f_desembolso', i) || '')}</td><td>${v('promotor', i)}</td><td>${v('nombre_deudor', i)}</td>`
+      + `<td class="num">${fN(mv(D, 'dias_mora', i))}</td><td>${v('producto_comercial', i)}</td><td class="num">${fN(mv(D, 'saldopagare', i))}</td><td class="num">${fN(mv(D, 'valor_cuota', i))}</td>`
+      + `<td class="num">${D.datos.recaudo_total?.[i] == null ? '' : fN(D.datos.recaudo_total[i])}</td><td>${v('telefono', i)}</td><td>${dv(D, 'f_promesa', i) ? fDia(dv(D, 'f_promesa', i)) : ''}</td><td>${v('cargo', i)}</td></tr>`).join('')
+    + (L.length > 500 ? `<tr><td colspan="13">Se muestran las 500 de mayor saldo; la descarga trae todas.</td></tr>` : '') + (L.length ? '' : '<tr><td colspan="13">Sin cuentas en mora con los filtros aplicados.</td></tr>') + '</tbody></table>';
+}
 // Reglas de cobro FPD (documento REGLAS DE COBRO FPD): las mide el proceso por crédito; aquí se cuentan con los filtros
 const REGLAS_FPD = [['rg_predictivo', 'Predictivo Wolkvox (día 0 a 2)'], ['rg_fila', 'Fila MCC: llamada al cliente (día 1 a 2)'],
   ['rg_gestor', 'Alguna gestión de gestor desde el día 1'], ['rg_referencias', 'Referencias desde el día 5 de mora'],
@@ -730,29 +748,29 @@ function reglasFPD(D, idx) {
 // Una fila por cuota 1PD (primera cuota) de los últimos 13 meses; cada indicador viene medido "a la misma fecha"
 // (prefijo d_: el día del mes de hoy) y "al cierre" (prefijo c_: fin de mes, indicador oficial). Filtros y clic aplican.
 const SEG_IND = [
-  { g: 'Resultado', id: 'inc', t: 'Incumplimiento 1PD (indicador oficial)', r: ['pd'], mejor: 'bajo', f: fP },
-  { g: 'Resultado', id: 'm5', t: 'Mora a 5 días hábiles del vencimiento', r: ['m5'], mejor: 'bajo', f: fP },
-  { g: 'Oportunidad', id: 'prev', t: 'Gestión preventiva (3 días hábiles previos)', r: ['prev'], mejor: 'alto', f: fP },
-  { g: 'Oportunidad', id: 'm1', t: 'En mora el primer día hábil después del vencimiento', r: ['m1'], mejor: 'bajo', f: fP },
-  { g: 'Oportunidad', id: 'gd1', t: 'Gestionadas el primer día hábil de mora', r: ['gd1'], mejor: 'alto', f: fP },
-  { g: 'Oportunidad', id: 'tel12', t: 'Llamada en los 2 primeros días hábiles de mora', r: ['tel12'], mejor: 'alto', f: fP },
-  { g: 'Oportunidad', id: 'pago2', t: 'Salen de mora a más tardar el 2.º día hábil', r: ['pago2'], mejor: 'alto', f: fP },
-  { g: 'Cobertura en mora', id: 'kpi2', t: 'KPI 2 gestiones/día en mora sin promesa', c: ['dsp2', 'dsp'], mejor: 'alto', f: fP, pct: true },
-  { g: 'Cobertura en mora', id: 'sing', t: 'Días en mora sin promesa y sin gestión', c: ['dsp0', 'dsp'], mejor: 'bajo', f: fP, pct: true },
-  { g: 'Cobertura en mora', id: 'singc', t: 'Cuentas en mora sin ninguna gestión', n: 'sing', mejor: 'bajo' },
-  { g: 'Cobertura en mora', id: 'gxc', t: 'Gestiones de cobro por cuenta en mora', c: ['gm', 'm1c'], mejor: 'alto', f: v => fDec(v, 1) },
-  { g: 'Promesas', id: 'pxc', t: 'Promesas por cuenta en mora', c: ['prn', 'm1c'], mejor: 'alto', f: v => fDec(v, 1) },
-  { g: 'Promesas', id: 'plazo', t: 'Plazo promedio de la promesa (días hábiles)', c: ['prplazo', 'prn'], sinPeso: true, mejor: 'bajo', f: v => fDec(v, 1) },
-  { g: 'Promesas', id: 'cumple', t: 'Promesas cumplidas', c: ['prok', 'prev_n'], mejor: 'alto', f: fP, pct: true },
-  { g: 'Promesas', id: 'gact', t: 'Gestiones por día con promesa activa', c: ['gca', 'dca'], sinPeso: true, mejor: 'alto', f: v => fDec(v, 1) },
-  { g: 'Visitas y riesgo', id: 'vis', t: 'Visitas físicas en mora (cuentas)', vis: true, mejor: 'alto' },
-  { g: 'Visitas y riesgo', id: 'visrpc', t: 'Visitas con contacto del titular', c: ['visrpc', 'visg'], sinPeso: true, mejor: 'alto', f: fP, pct: true },
-  { g: 'Visitas y riesgo', id: 'sintel', t: 'Incumplidas sin contacto telefónico con el titular', r: ['sintel'], mejor: 'bajo', f: fP },
-  { g: 'Reglas de cobro FPD', id: 'r_pred', t: 'Predictivo Wolkvox (día 0 a 2)', r: ['r_pred'], mejor: 'alto', f: fP },
-  { g: 'Reglas de cobro FPD', id: 'r_fila', t: 'Fila MCC: llamada al cliente (día 1 a 2)', r: ['r_fila'], mejor: 'alto', f: fP },
-  { g: 'Reglas de cobro FPD', id: 'r_gestor', t: 'Alguna gestión de gestor desde el día 1', r: ['r_gestor'], mejor: 'alto', f: fP },
-  { g: 'Reglas de cobro FPD', id: 'r_ref', t: 'Referencias desde el día 5 de mora', r: ['r_ref'], mejor: 'alto', f: fP },
-  { g: 'Reglas de cobro FPD', id: 'r_vis', t: 'Visita de campo (saldo ≥ C$12,000)', r: ['r_vis'], mejor: 'alto', f: fP },
+  { g: 'Resultado', id: 'inc', d: 'Saldo pagaré de las cuotas que al corte tienen 1 o más cuotas vencidas en MCCollect ÷ saldo pagaré de las cuotas del mes ya vencidas. Al cierre es el indicador oficial (foto del día 1 del mes siguiente).', t: 'Incumplimiento 1PD (indicador oficial)', r: ['pd'], mejor: 'bajo', f: fP },
+  { g: 'Resultado', id: 'm5', d: 'Se toman las cuotas que ya cumplieron 6 días hábiles (lunes a sábado, sin feriados) desde su vencimiento. Es el % que seguía con cuota vencida el 6.º día hábil, es decir, después de 5 días hábiles completos en mora. Se compara igual en todos los meses.', t: 'Mora a 5 días hábiles del vencimiento', r: ['m5'], mejor: 'bajo', f: fP },
+  { g: 'Oportunidad', id: 'prev', d: '% de las cuotas vencidas que recibieron al menos una gestión de un gestor (llamada, WhatsApp o visita; no cuentan SMS ni predictivo) en los 3 días hábiles anteriores a su vencimiento.', t: 'Gestión preventiva (3 días hábiles previos)', r: ['prev'], mejor: 'alto', f: fP },
+  { g: 'Oportunidad', id: 'm1', d: '% de las cuotas vencidas que el primer día hábil después del vencimiento todavía tenían la cuota vencida (no pagaron a tiempo).', t: 'En mora el primer día hábil después del vencimiento', r: ['m1'], mejor: 'bajo', f: fP },
+  { g: 'Oportunidad', id: 'gd1', d: 'De las cuentas en mora el primer día hábil, % que recibió una gestión de gestor ese mismo día.', t: 'Gestionadas el primer día hábil de mora', r: ['gd1'], mejor: 'alto', f: fP },
+  { g: 'Oportunidad', id: 'tel12', d: 'De las cuentas en mora el primer día hábil, % que recibió una gestión telefónica de gestor (llamada o WhatsApp) en el día hábil 1 o 2 de mora.', t: 'Llamada en los 2 primeros días hábiles de mora', r: ['tel12'], mejor: 'alto', f: fP },
+  { g: 'Oportunidad', id: 'pago2', d: 'De las cuentas en mora el primer día hábil, % que ya no tenía cuota vencida el 3.er día hábil (pagaron a más tardar el 2.º día hábil de mora).', t: 'Salen de mora a más tardar el 2.º día hábil', r: ['pago2'], mejor: 'alto', f: fP },
+  { g: 'Cobertura en mora', id: 'kpi2', d: 'Se cuentan los días hábiles que cada cuenta pasó en mora (hasta 15) SIN una promesa de pago vigente. De esos días, % en que la cuenta recibió 2 o más gestiones de gestor. Es la meta de intensidad: 2 gestiones por día en mora.', t: 'KPI 2 gestiones/día en mora sin promesa', c: ['dsp2', 'dsp'], mejor: 'alto', f: fP, pct: true },
+  { g: 'Cobertura en mora', id: 'sing', d: 'Mismos días hábiles en mora sin promesa vigente: % de esos días en que la cuenta no recibió ninguna gestión de gestor. Menos es mejor.', t: 'Días en mora sin promesa y sin gestión', c: ['dsp0', 'dsp'], mejor: 'bajo', f: fP, pct: true },
+  { g: 'Cobertura en mora', id: 'singc', d: 'Saldo pagaré de las cuentas que estuvieron en mora y no recibieron ninguna gestión de gestor mientras estaban en mora (días hábiles 1 a 15).', t: 'Cuentas en mora sin ninguna gestión', n: 'sing', mejor: 'bajo' },
+  { g: 'Cobertura en mora', id: 'gxc', d: 'Gestiones de gestor hechas mientras la cuenta estaba en mora (días hábiles 1 a 15) ÷ cuentas en mora (ponderado por saldo pagaré).', t: 'Gestiones de cobro por cuenta en mora', c: ['gm', 'm1c'], mejor: 'alto', f: v => fDec(v, 1) },
+  { g: 'Promesas', id: 'pxc', d: 'Promesas de pago registradas mientras la cuenta estaba en mora ÷ cuentas en mora (ponderado por saldo pagaré).', t: 'Promesas por cuenta en mora', c: ['prn', 'm1c'], mejor: 'alto', f: v => fDec(v, 1) },
+  { g: 'Promesas', id: 'plazo', d: 'Días hábiles promedio entre el día en que se registra la promesa y la fecha prometida.', t: 'Plazo promedio de la promesa (días hábiles)', c: ['prplazo', 'prn'], sinPeso: true, mejor: 'bajo', f: v => fDec(v, 1) },
+  { g: 'Promesas', id: 'cumple', d: 'De las promesas cuya fecha ya pasó, % en que hubo un pago entre el día de la gestión y la fecha prometida + 1 día hábil (pagos según MCCollect).', t: 'Promesas cumplidas', c: ['prok', 'prev_n'], mejor: 'alto', f: fP, pct: true },
+  { g: 'Promesas', id: 'gact', d: 'Gestiones de gestor por día en los días en que la cuenta tenía una promesa vigente (en esos días no se espera insistir).', t: 'Gestiones por día con promesa activa', c: ['gca', 'dca'], sinPeso: true, mejor: 'alto', f: v => fDec(v, 1) },
+  { g: 'Visitas y riesgo', id: 'vis', d: 'Cantidad de cuentas con al menos una visita de campo (Visita Cliente Domicilio) mientras estaban en mora.', t: 'Visitas físicas en mora (cuentas)', vis: true, mejor: 'alto' },
+  { g: 'Visitas y riesgo', id: 'visrpc', d: 'De las visitas de campo en mora, % en que se habló con el titular (RPC).', t: 'Visitas con contacto del titular', c: ['visrpc', 'visg'], sinPeso: true, mejor: 'alto', f: fP, pct: true },
+  { g: 'Visitas y riesgo', id: 'sintel', d: 'De las cuentas en 1PD al corte, % que nunca tuvo contacto telefónico con el titular (RPC) desde 12 días antes del vencimiento.', t: 'Incumplidas sin contacto telefónico con el titular', r: ['sintel'], mejor: 'bajo', f: fP },
+  { g: 'Reglas de cobro FPD', id: 'r_pred', d: 'Regla: predictivo Wolkvox el día del vencimiento o en los 2 días siguientes. % de las cuentas en mora al día siguiente del vencimiento que la cumplen.', t: 'Predictivo Wolkvox (día 0 a 2)', r: ['r_pred'], mejor: 'alto', f: fP },
+  { g: 'Reglas de cobro FPD', id: 'r_fila', d: 'Regla: fila de MC Collect con llamada al número principal del cliente en el día 1 o 2 de mora (días calendario).', t: 'Fila MCC: llamada al cliente (día 1 a 2)', r: ['r_fila'], mejor: 'alto', f: fP },
+  { g: 'Reglas de cobro FPD', id: 'r_gestor', d: 'Regla: alguna llamada o WhatsApp de un gestor desde el día 1 de mora hasta el corte.', t: 'Alguna gestión de gestor desde el día 1', r: ['r_gestor'], mejor: 'alto', f: fP },
+  { g: 'Reglas de cobro FPD', id: 'r_ref', d: 'Regla: con 5 días de mora, gestión completa a referencias. % de las cuentas que llegaron a 5 días de mora con llamada a referencias desde ese día.', t: 'Referencias desde el día 5 de mora', r: ['r_ref'], mejor: 'alto', f: fP },
+  { g: 'Reglas de cobro FPD', id: 'r_vis', d: 'Regla: visita de campo para saldo de C$12,000 o más al llegar a los días de mora del producto (Personales 10 días si vence en la 1.ª quincena, 5 en la 2.ª; PYME 3 y 2; Motos 5). % de las que aplican con visita o envío a visita.', t: 'Visita de campo (saldo ≥ C$12,000)', r: ['r_vis'], mejor: 'alto', f: fP },
 ];
 const fDec = (v, d) => (v == null || !isFinite(v) ? '—' : v.toLocaleString('es-NI', { minimumFractionDigits: d, maximumFractionDigits: d }));
 const ROD_ORDEN = ['MEJORA', 'MANTIENE', 'DESMEJORA', 'CANCELADO', 'SIN DATO'];
@@ -791,42 +809,45 @@ function segValor(I, a) {
   if (I.vis) return a.visc;
   return null;
 }
-const segFmt = I => (I.f || (S.seg.by === 'w' && I.n ? fM : fN));
+const segFmt = I => (I.f || (I.n ? fM : fN));
 
 function pintarSeguimiento(D) {
-  S.seg = S.seg || { k: 'd', by: 'n', mes: null };
+  S.seg = S.seg || { k: 'd', by: 'w', mes: null };
+  S.seg.by = 'w';   // la gerencia de riesgo lo mira en saldo pagaré
   const meses = D.meta.meses, actual = meses[meses.length - 1], cerrados = meses.slice(0, -1);
   const idx = filas(D, filtrosActivos());
   const A = segAgregar(D, idx);
   const k = S.seg.k, corte = m => D.meta.cortes[m][k === 'd' ? 'dia' : 'cierre'];
+  const mesSel = S.seg.mes && meses.includes(S.seg.mes) ? S.seg.mes : actual;
   const dHoy = +D.meta.hoy.slice(8);
   $('segCtl').hidden = false;
   $('segCtl').innerHTML = `<div class="segbtns"><span>Medir cada mes</span>`
     + `<button type="button" data-segk="d" class="${k === 'd' ? 'on' : ''}">A la misma fecha (día ${dHoy})</button>`
     + `<button type="button" data-segk="c" class="${k === 'c' ? 'on' : ''}">Al cierre del mes</button></div>`
-    + `<div class="segbtns"><span>Ver en</span><button type="button" data-segby="n" class="${S.seg.by === 'n' ? 'on' : ''}">Cantidad de cuentas</button>`
-    + `<button type="button" data-segby="w" class="${S.seg.by === 'w' ? 'on' : ''}">Saldo pagaré</button></div>`
-    + `<span class="small muted">Fotos: MCCollect ${fDia(D.meta.foto_mccollect)} · Cendoc ${fDia(D.meta.foto_cendoc)} · ${fMes(actual)} medido a hoy en las dos opciones.</span>`;
+    + `<label class="small segmes">Mes del detalle <select id="segMes">${meses.slice().reverse().map(m => `<option value="${m}"${m === (S.seg.mes || actual) ? ' selected' : ''}>${fMes(m)}${m === actual ? '*' : ''}</option>`).join('')}</select></label>`
+    + `<span class="small muted">Todo en saldo pagaré. Fotos: MCCollect ${fDia(D.meta.foto_mccollect)} · Cendoc ${fDia(D.meta.foto_cendoc)} · ${fMes(actual)} medido a hoy en las dos opciones. Tarjetas: <b class="ok-txt">verde</b> = igual o mejor que el promedio de los 12 meses anteriores al mismo corte; <b class="alerta-txt">rojo</b> = peor.</span>`;
 
   const prom = I => { const v = cerrados.map(m => segValor(I, A[m])).filter(x => x != null); return v.length ? v.reduce((s, x) => s + x, 0) / v.length : null; };
   const peor = (I, v, ref) => v != null && ref != null && (I.mejor === 'bajo' ? v > ref : v < ref);
   const ind = id => SEG_IND.find(x => x.id === id);
-  const kp = (id, l, clase) => {
+  const kp = (id, l) => {
     const I = ind(id), v = segValor(I, A[actual]), ref = prom(I);
-    return [l, segFmt(I)(v), `promedio ${cerrados.length} meses: ${segFmt(I)(ref)}${peor(I, v, ref) ? ' · peor' : ' · mejor o igual'}`, peor(I, v, ref) ? 'rojo' : clase];
+    return [l, segFmt(I)(v), `promedio ${cerrados.length} meses al mismo corte: ${segFmt(I)(ref)} · ${peor(I, v, ref) ? 'peor' : 'igual o mejor'}`, peor(I, v, ref) ? 'rojo' : 'verde'];
   };
   kpis([
-    kp('inc', `1PD ${fMes(actual)} (al ${fDia(D.meta.hoy)})`, 'navy'), kp('m5', 'Mora a 5 días hábiles', 'cielo'),
-    kp('gd1', 'Gestionadas el 1.er día de mora', ''), kp('sing', 'Días en mora sin gestión', 'naranja'),
-    kp('cumple', 'Promesas cumplidas', 'lima'), kp('r_gestor', 'Regla: gestión de gestor', 'amarillo'),
+    kp('inc', `1PD ${fMes(actual)} (al ${fDia(D.meta.hoy)})`), kp('m5', 'Mora a 5 días hábiles'),
+    kp('gd1', 'Gestionadas el 1.er día de mora'), kp('sing', 'Días en mora sin gestión'),
+    kp('cumple', 'Promesas cumplidas'), kp('r_gestor', 'Regla: gestión de gestor'),
   ]);
 
   const etiq = meses.map(m => fMes(m) + (m === actual ? '*' : ''));
   const colores = I => meses.map(m => { const v = segValor(I, A[m]), ref = prom(I); return m === actual ? (peor(I, v, ref) ? '#EE232E' : SERIE[1]) : peor(I, v, ref) ? SERIE[2] : SERIE[1]; });
-  const mesSel = S.seg.mes && meses.includes(S.seg.mes) ? S.seg.mes : actual;
   const nota = k === 'd' ? `Cada mes medido a su día ${dHoy}` : 'Cada mes medido a su cierre';
   $('graficos').innerHTML =
     tarjeta('gSegInc', 'Incumplimiento 1PD por mes', `${nota}: cuotas con 1 o más cuotas vencidas en la foto de MCCollect del corte, sobre las cuotas ya vencidas. Ámbar: peor que el promedio de los meses cerrados; rojo: el mes en curso peor que ese promedio.`, { ancho: true })
+    + `<article class="graf ancho"><div class="cab"><h3>Embudo de cobranza de las cuentas en mora</h3><span class="small muted">Saldo pagaré de las cuentas que amanecieron en mora al día siguiente del vencimiento, según lo que lograron las gestiones desde el día 1 de mora hasta el corte. En gris, el % sobre el paso anterior.</span></div><div class="tabla-caja seg-tabla" id="segEmbudo"></div></article>`
+    + tarjeta('gSegConv', '¿Un RPC más alto trae más promesas y más pago?', 'Por mes: % del saldo en mora con RPC, % del saldo con RPC que llegó a promesa, % de lo prometido que se cumplió y % del saldo en mora que salió de mora al corte.', { ancho: true, leyenda: [['Con RPC', SERIE[1]], ['Promesa sobre RPC', SERIE[2]], ['Cumplida sobre promesa', SERIE[0]], ['Salió de mora', '#06255B']] })
+    + `<article class="graf ancho"><div class="cab"><h3>¿Qué canal rinde más? · ${fMes(mesSel)}${mesSel === actual ? '*' : ''}</h3><span class="small muted">Cuentas en mora (en saldo pagaré) según el canal con que se gestionaron desde el día 1 de mora. Una cuenta puede tener varios canales. «Salió de mora» compara las cuentas gestionadas por ese canal contra las que no.</span></div><div class="tabla-caja seg-tabla" id="segCanales"></div></article>`
     + `<article class="graf ancho"><div class="cab"><h3>Indicadores de gestión de la primera cuota</h3><span class="small muted">${nota}. Verde: mejor mes; rojo: peor mes cerrado; fondo ámbar: peor que el promedio; fondo rojo: mes en curso peor que el promedio.</span></div><div class="tabla-caja seg-tabla" id="segTabla"></div></article>`
     + tarjeta('gSegM5', 'Mora a 5 días hábiles', 'Comparable entre meses: cuotas con 6 días hábiles observados.', {})
     + tarjeta('gSegGd1', 'Gestionadas el primer día de mora', '% de las cuentas en mora al día siguiente del vencimiento.', {})
@@ -835,7 +856,7 @@ function pintarSeguimiento(D) {
     + tarjeta('gSegRod', 'Rodamiento de Cendoc a la fecha de corte', 'Cuotas 1PD ya vencidas según el rodamiento de Cendoc en la foto del corte.', { leyenda: ROD_ORDEN.map((t, j) => [t, ROD_COLOR[j]]) })
     + tarjeta('gSegCos', 'Mora a 5 días hábiles por mes de colocación', 'Mes de desembolso con 100 cuotas o más observadas a 5 días hábiles.', {})
     + tarjeta('gSegVen', `${fMes(mesSel)}${mesSel === actual ? '*' : ''} por fecha de vencimiento`, `Cuotas según el día en que vencen y cómo están al corte (${fDia(corte(mesSel))}).`, { ancho: true, leyenda: [['Al día', SERIE[0]], ['En 1PD', '#EE232E'], ['Por vencer', GRIS]] })
-    + (veTablas() ? `<article class="graf ancho"><div class="cab"><h3>Cuentas en 1PD</h3><label class="small">Mes <select id="segMes">${meses.slice().reverse().map(m => `<option value="${m}"${m === mesSel ? ' selected' : ''}>${fMes(m)}${m === actual ? '*' : ''}</option>`).join('')}</select></label></div><p class="nota">Gestiones desde 3 días hábiles antes del vencimiento hasta el corte. Ordenadas por vencimiento y saldo.</p><div class="tabla-caja" id="segLista"></div></article>` : '');
+    + (veTablas() ? `<article class="graf ancho"><div class="cab"><h3>Cuentas en 1PD · ${fMes(mesSel)}${mesSel === actual ? '*' : ''}</h3></div><p class="nota">Gestiones desde 3 días hábiles antes del vencimiento hasta el corte. Ordenadas por vencimiento y saldo.</p><div class="tabla-caja" id="segLista"></div></article>` : '');
 
   const I1 = ind('inc');
   barrasSimples('gSegInc', etiq, meses.map(m => segValor(I1, A[m])), {
@@ -891,6 +912,57 @@ function pintarSeguimiento(D) {
     clic: j => ({ dia_vence: fechasV[j] }),
   });
 
+
+  // Embudo por mes (saldo pagaré de las cuentas en mora)
+  const ETAPAS = [['e_gest', 'Con alguna gestión', 'Cualquier registro en el cono: SMS, predictivo, llamada, WhatsApp o visita.'],
+    ['e_int', 'Con intento', 'Gestión marcada como intento (gestionada) en el catálogo del cono.'],
+    ['e_con', 'Con contacto', 'Se logró contacto con alguien (titular o tercero).'],
+    ['e_rpc', 'Con RPC', 'Se habló con el titular (contacto con la persona correcta).'],
+    ['e_prom', 'Con promesa de pago', 'Se registró una promesa con fecha.'],
+    ['e_cump', 'Promesa cumplida', 'Hubo un pago entre la promesa y la fecha prometida + 1 día hábil.'],
+    ['e_pago', 'Salió de mora al corte', 'Al corte ya no tiene cuotas vencidas (pagó).']];
+  const W = D.datos.w, EM = meses.map(() => ({ base: 0 }));
+  for (const i of idx) {
+    const j = meses.indexOf(dv(D, 'mes_cobro', i)); if (j < 0) continue;
+    if (D.datos[`${k}_e_gest`][i] == null) continue;
+    const w = W[i] || 0, a = EM[j]; a.base += w;
+    for (const [c] of ETAPAS) if (D.datos[`${k}_${c}`][i] === 1) a[c] = (a[c] || 0) + w;
+  }
+  let he = `<table><thead><tr><th>Paso</th>${etiq.map(e => `<th class="num">${e}</th>`).join('')}</tr></thead><tbody>`
+    + `<tr><td>Saldo pagaré en mora (día 1)</td>${EM.map(a => `<td class="num">${fM(a.base)}</td>`).join('')}</tr>`;
+  ETAPAS.forEach(([c, t, d], n) => {
+    he += `<tr><td title="${esc(d)}">${t} <span class="info">ⓘ</span><div class="desc">${esc(d)}</div></td>${EM.map(a => {
+      const v = a[c] || 0, prev = n === 0 || c === 'e_pago' ? a.base : a[ETAPAS[n - 1][0]] || 0;
+      return `<td class="num" title="${esc(fM(v))}">${fP(pct(v, a.base))}${n && c !== 'e_pago' ? `<div class="sub">${fP(pct(v, prev))}</div>` : ''}</td>`;
+    }).join('')}</tr>`;
+  });
+  $('segEmbudo').innerHTML = he + '</tbody></table>';
+  lineas('gSegConv', etiq, [
+    { t: 'Con RPC', c: SERIE[1], v: EM.map(a => pct(a.e_rpc || 0, a.base)) },
+    { t: 'Promesa sobre RPC', c: SERIE[2], v: EM.map(a => pct(a.e_prom || 0, a.e_rpc || 0)) },
+    { t: 'Cumplida sobre promesa', c: SERIE[0], v: EM.map(a => pct(a.e_cump || 0, a.e_prom || 0)) },
+    { t: 'Salió de mora', c: '#06255B', v: EM.map(a => pct(a.e_pago || 0, a.base)) },
+  ], { fmt: fP, extra: it => { const a = EM[it[0].dataIndex]; return [`Saldo en mora ${fM(a.base)} · con RPC ${fM(a.e_rpc || 0)}`, `Prometido ${fM(a.e_prom || 0)} · cumplido ${fM(a.e_cump || 0)} · salió de mora ${fM(a.e_pago || 0)}`]; }, clic: j => ({ mes_cobro: meses[j] }) });
+
+  // Efectividad por canal en el mes elegido
+  const CAN = [['sms', 'SMS'], ['wap', 'WhatsApp'], ['llam', 'Llamada de gestor'], ['pred', 'Predictivo'], ['vis', 'Visita de campo']];
+  const ec = CAN.map(() => ({ u: 0, r: 0, p: 0, c: 0, pu: 0, pub: 0, pn: 0, pnb: 0 }));
+  let baseMes = 0;
+  for (const i of idx) {
+    if (dv(D, 'mes_cobro', i) !== mesSel || D.datos[`${k}_e_gest`][i] == null) continue;
+    const w = W[i] || 0, pago = D.datos[`${k}_e_pago`][i]; baseMes += w;
+    CAN.forEach(([c], j) => {
+      const u = D.datos[`${k}_k_${c}_u`][i] === 1, a = ec[j];
+      if (u) { a.u += w; if (D.datos[`${k}_k_${c}_r`][i] === 1) a.r += w; if (D.datos[`${k}_k_${c}_p`][i] === 1) a.p += w; if (D.datos[`${k}_k_${c}_c`][i] === 1) a.c += w; }
+      if (pago != null) { if (u) { a.pub += w; if (pago === 1) a.pu += w; } else { a.pnb += w; if (pago === 1) a.pn += w; } }
+    });
+  }
+  $('segCanales').innerHTML = `<table><thead><tr><th>Canal</th><th class="num">Saldo en mora gestionado</th><th class="num">% del saldo en mora</th><th class="num">RPC por este canal</th><th class="num">Promesa por este canal</th><th class="num">Promesa cumplida</th><th class="num">Salió de mora · con el canal</th><th class="num">· sin el canal</th></tr></thead><tbody>`
+    + CAN.map(([, t], j) => { const a = ec[j], dif = pct(a.pu, a.pub) - pct(a.pn, a.pnb);
+      return `<tr><td>${t}</td><td class="num">${fM(a.u)}</td><td class="num">${fP(pct(a.u, baseMes))}</td><td class="num">${fP(pct(a.r, a.u))}</td><td class="num">${fP(pct(a.p, a.u))}</td><td class="num">${fP(pct(a.c, a.p))}</td>`
+        + `<td class="num ${isFinite(dif) && dif > 0 ? 'mejor' : isFinite(dif) && dif < 0 ? 'peor' : ''}">${fP(pct(a.pu, a.pub))}</td><td class="num">${fP(pct(a.pn, a.pnb))}</td></tr>`; }).join('')
+    + `</tbody></table><p class="small muted">RPC, promesa y cumplida se miden sobre el saldo gestionado por ese canal. SMS y predictivo no registran conversación (sin RPC ni promesa): su aporte se ve en «Salió de mora». Las cuentas más difíciles reciben más canales, por eso un canal con «con el canal» menor que «sin el canal» no significa que empeore el pago.</p>`;
+
   // Tabla de indicadores
   let html = `<table><thead><tr><th>Indicador</th>${etiq.map(e => `<th class="num">${e}</th>`).join('')}<th class="num">Promedio cerrados</th></tr></thead><tbody>`;
   let grupo = '';
@@ -900,7 +972,7 @@ function pintarSeguimiento(D) {
     const mejorV = cer.length ? (I.mejor === 'bajo' ? Math.min(...cer) : Math.max(...cer)) : null;
     const peorV = cer.length ? (I.mejor === 'bajo' ? Math.max(...cer) : Math.min(...cer)) : null;
     const f = segFmt(I);
-    html += `<tr><td>${I.t}</td>${vals.map((v, j) => {
+    html += `<tr><td title="${esc(I.d || '')}">${I.t} <span class="info">ⓘ</span><div class="desc">${esc(I.d || '')}</div></td>${vals.map((v, j) => {
       const cur = j === meses.length - 1, cls = [];
       if (v != null && !cur && v === mejorV) cls.push('mejor'); else if (v != null && !cur && v === peorV) cls.push('peor');
       if (peor(I, v, ref)) cls.push(cur ? 'fondo-rojo' : 'fondo-ambar');
@@ -908,8 +980,8 @@ function pintarSeguimiento(D) {
     }).join('')}<td class="num tot">${ref == null ? '—' : f(ref)}</td></tr>`;
   }
   html += `<tr class="grupo"><td colspan="${meses.length + 2}">Base</td></tr>`
-    + `<tr><td>Cuotas 1PD ya vencidas al corte</td>${meses.map(m => `<td class="num">${S.seg.by === 'n' ? fN(A[m].incl) : fM(A[m].inclw)}</td>`).join('')}<td></td></tr>`
-    + `<tr><td>En 1PD al corte</td>${meses.map(m => `<td class="num">${S.seg.by === 'n' ? fN(A[m].pdn) : fM(A[m].pdw)}</td>`).join('')}<td></td></tr>`
+    + `<tr><td>Saldo pagaré de las cuotas ya vencidas al corte</td>${meses.map(m => `<td class="num">${S.seg.by === 'n' ? fN(A[m].incl) : fM(A[m].inclw)}</td>`).join('')}<td></td></tr>`
+    + `<tr><td>Saldo pagaré en 1PD al corte</td>${meses.map(m => `<td class="num">${S.seg.by === 'n' ? fN(A[m].pdn) : fM(A[m].pdw)}</td>`).join('')}<td></td></tr>`
     + `<tr><td>Fecha de corte</td>${meses.map(m => `<td class="num">${fDia(corte(m))}</td>`).join('')}<td></td></tr>`;
   $('segTabla').innerHTML = html + '</tbody></table>';
 
@@ -925,6 +997,64 @@ function pintarSeguimiento(D) {
       + (L.length ? '' : '<tr><td colspan="12">Sin cuentas en 1PD con los filtros aplicados.</td></tr>') + '</tbody></table>';
   }
 }
+
+
+// ---------- Pestaña Primeros Pagos – Cosecha: el 1PD de cada mes de desembolso, según el mes en que cicla su primera cuota ----------
+function pintarCosecha1PD(D) {
+  S.seg = S.seg || { k: 'd', by: 'w', mes: null };
+  const meses = D.meta.meses, actual = meses[meses.length - 1], k = S.seg.k, dHoy = +D.meta.hoy.slice(8);
+  const idx = filas(D, filtrosActivos());
+  $('segCtl').hidden = false;
+  $('segCtl').innerHTML = `<div class="segbtns"><span>Medir cada mes de cobro</span>`
+    + `<button type="button" data-segk="d" class="${k === 'd' ? 'on' : ''}">A la misma fecha (día ${dHoy})</button>`
+    + `<button type="button" data-segk="c" class="${k === 'c' ? 'on' : ''}">Al cierre del mes</button></div>`
+    + `<span class="small muted">Todo en saldo pagaré. Una cosecha (mes de desembolso) tiene primeras cuotas que vencen en uno o dos meses de cobro; aquí se ve cuánto aporta cada uno a su 1PD.</span>`;
+  const W = D.datos.w, incl = D.datos[`${k}_incl`], pdc = D.datos[`${k}_pd`];
+  // cosechas desde el mes anterior al primer mes de cobro (las más viejas no tienen todas sus primeras cuotas en la ventana)
+  const [ay, am] = meses[0].split('-').map(Number), mesPrevio = am === 1 ? `${ay - 1}-12` : `${ay}-${String(am - 1).padStart(2, '0')}`;
+  const M = new Map();   // cosecha → mes de cobro → {tot, venc, pd}
+  for (const i of idx) {
+    const c = dv(D, 'mes_desembolso', i), m = dv(D, 'mes_cobro', i), w = W[i] || 0;
+    if (!c || c === 'SIN DATO') continue;
+    const fila = M.get(c) || new Map(); M.set(c, fila);
+    const a = fila.get(m) || { tot: 0, venc: 0, pd: 0, n: 0, npd: 0 }; fila.set(m, a);
+    a.tot += w; a.n++;
+    if (incl[i]) a.venc += w;
+    if (pdc[i] === 1) { a.pd += w; a.npd++; }
+  }
+  const sum = (fila, key) => [...fila.values()].reduce((s, a) => s + a[key], 0);
+  const cosechas = [...M.keys()].filter(c => sum(M.get(c), 'n') >= 100 && c >= mesPrevio).sort();
+  const cols = meses;
+  const recientes = cosechas.slice(-8);
+  kpis(recientes.slice(-4).reverse().map((c, j) => {
+    const f = M.get(c), v = sum(f, 'venc'), pd = sum(f, 'pd'), t = sum(f, 'tot');
+    return [`Cosecha ${fMes(c)}`, fP(pct(pd, v)), `1PD sobre lo ya vencido · ${fP(pct(t - v, t))} del saldo aún por vencer`, ['navy', 'cielo', '', 'lima'][j]];
+  }));
+  $('graficos').innerHTML =
+    `<article class="graf ancho"><div class="cab"><h3>1PD de cada cosecha según el mes en que cicla su primera cuota</h3><span class="small muted">Celda: % del saldo pagaré en 1PD sobre el saldo de las cuotas ya vencidas de esa cosecha en ese mes de cobro. Debajo, el saldo que cicla ese mes. Total: el 1PD de toda la cosecha.</span></div><div class="tabla-caja seg-tabla" id="cosTabla"></div></article>`
+    + tarjeta('gCosAporte', 'Aporte de cada mes de cobro al 1PD de la cosecha', 'Saldo pagaré en 1PD de cada cosecha, separado por el mes en que venció su primera cuota.', { ancho: true, leyenda: cols.slice(-6).map((m, j) => [fMes(m), PALETA[j % PALETA.length]]).concat([['Meses anteriores', GRIS]]) })
+    + tarjeta('gCosPD', '1PD de la cosecha y saldo aún por vencer', 'Barras: 1PD sobre el saldo ya vencido. Gris: % del saldo de la cosecha cuya primera cuota todavía no vence (el 1PD puede cambiar).', { ancho: true, leyenda: [['1PD de la cosecha', SERIE[2]], ['Saldo por vencer', GRIS]] });
+  let h = `<table><thead><tr><th>Cosecha</th>${cols.map(m => `<th class="num">${fMes(m)}${m === actual ? '*' : ''}</th>`).join('')}<th class="num">Total cosecha</th></tr></thead><tbody>`;
+  for (const c of cosechas.slice().reverse()) {
+    const f = M.get(c), v = sum(f, 'venc'), pd = sum(f, 'pd');
+    h += `<tr><td><b>${fMes(c)}</b></td>${cols.map(m => { const a = f.get(m); if (!a) return '<td></td>';
+      const p = pct(a.pd, a.venc), alto = p != null && p > 5;
+      return `<td class="num clic${alto ? ' fondo-ambar' : ''}" data-cos="${c}" data-cobro="${m}" title="${esc(`${fN(a.npd)} cuentas en 1PD de ${fN(a.n)} · 1PD ${fM(a.pd)} de ${fM(a.venc)} vencido`)}">${a.venc ? fP(p) : '<span class="muted">por vencer</span>'}<div class="sub">${fM(a.tot)}</div></td>`; }).join('')}`
+      + `<td class="num tot">${fP(pct(pd, v))}<div class="sub">${fM(sum(f, 'tot'))}</div></td></tr>`;
+  }
+  $('cosTabla').innerHTML = h + '</tbody></table>';
+  const ult = cols.slice(-6);
+  barrasApiladas('gCosAporte', recientes.map(fMes), [...ult.map((m, j) => ({ t: fMes(m), c: PALETA[j % PALETA.length], v: recientes.map(c => M.get(c).get(m)?.pd || 0) })),
+    { t: 'Meses anteriores', c: GRIS, v: recientes.map(c => [...M.get(c).entries()].filter(([m]) => !ult.includes(m)).reduce((s, [, a]) => s + a.pd, 0)) }], {
+    fmt: fM, etiqueta: x => { const c = recientes[x.dataIndex], f = M.get(c), tot = sum(f, 'pd'); return `${x.dataset.label}: ${fM(x.raw)} · ${fP(pct(x.raw, tot))} del 1PD de la cosecha`; },
+    clic: (j, g) => (g == null || g >= ult.length ? { mes_desembolso: recientes[j] } : { mes_desembolso: recientes[j], mes_cobro: ult[g] }),
+  });
+  barrasAgrupadas('gCosPD', recientes.map(fMes), [
+    { t: '1PD de la cosecha', c: SERIE[2], v: recientes.map(c => pct(sum(M.get(c), 'pd'), sum(M.get(c), 'venc'))) },
+    { t: 'Saldo por vencer', c: GRIS, v: recientes.map(c => { const f = M.get(c), t = sum(f, 'tot'); return pct(t - sum(f, 'venc'), t); }) },
+  ], { fmt: fP, extra: it => { const f = M.get(recientes[it[0].dataIndex]), t = sum(f, 'tot'), v = sum(f, 'venc'); return [`Saldo de la cosecha ${fM(t)}`, `Ya vencido ${fM(v)} · en 1PD ${fM(sum(f, 'pd'))} · por vencer ${fM(t - v)}`]; }, clic: j => ({ mes_desembolso: recientes[j] }) });
+}
+document.addEventListener('click', e => { const c = e.target.closest('[data-cos]'); if (c) filtrarDesdeGrafico({ mes_desembolso: c.dataset.cos, mes_cobro: c.dataset.cobro }); });
 
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-segk],[data-segby]');
@@ -1163,8 +1293,8 @@ function pintar() {
   if (!D) { $('kpis').innerHTML = $('graficos').innerHTML = ''; $('tablaCaja').hidden = true; $('armarCaja').hidden = true; $('preguntas').hidden = !CFG.IA_CLAUDE; return; }
   pintarFiltros(D);
   $('segCtl').hidden = true;
-  ({ cosecha: pintarCosecha, cartera_activa: pintarCartera, primeros_pagos: pintarPrimeros, cono: pintarCono, pp_seguimiento: pintarSeguimiento })[S.tab](D);
-  if (S.tab === 'pp_seguimiento') $('tablaCaja').hidden = true;
+  ({ cosecha: pintarCosecha, cartera_activa: pintarCartera, primeros_pagos: pintarPrimeros, cono: pintarCono, pp_seguimiento: pintarSeguimiento, pp_cosecha: pintarCosecha1PD })[S.tab](D);
+  if (S.tab === 'pp_seguimiento' || S.tab === 'pp_cosecha') $('tablaCaja').hidden = true;
   pintarArmar(D);
   $('btnDescargar').title = S.tab === 'cono' ? 'Descarga la base completa de créditos'
     : 'Descarga en Excel los créditos de esta pestaña con los filtros aplicados';

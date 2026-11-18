@@ -17,6 +17,7 @@ SELECT RTRIM([dco_credito]) AS credito
       ,[dco_valor_vencido]
       ,[dco_rodamiento]
       ,[dco_cargo]
+      ,[dco_recaudo_total]
 FROM [CENDOC].[dbo].[th_cendoc_diario_regional]
 WHERE pais = 'Nicaragua'
   AND f_reporte = @FReporte;

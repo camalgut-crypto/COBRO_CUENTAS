@@ -209,3 +209,14 @@ table.piv td.tot { font-weight: 700; }
 .seg-tabla td.fondo-ambar { background: #FFF1DC !important; }
 .seg-tabla td.fondo-rojo { background: #FDE2E3 !important; color: var(--rojo); font-weight: 700; }
 .alerta-txt { color: var(--rojo); }
+
+/* Seguimiento: explicaciones y embudo */
+.seg-tabla td .info { color: var(--cielo); font-size: 11px; cursor: help; }
+.seg-tabla td .desc { display: none; white-space: normal; font-size: 11px; color: var(--gris); max-width: 420px; margin-top: 3px; font-weight: 400; }
+.seg-tabla td:hover .desc { display: block; }
+.seg-tabla td .sub { font-size: 10.5px; color: var(--gris); font-weight: 400; }
+.segmes select { padding: 5px 8px; border: 1px solid var(--borde); border-radius: 7px; margin-left: 4px; }
+.kpi.verde { background: var(--verde); }
+.ok-txt { color: var(--verde-osc); }
+.seg-tabla td.clic { cursor: pointer; }
+.seg-tabla td.clic:hover { background: var(--verde-20) !important; }

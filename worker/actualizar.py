@@ -75,14 +75,18 @@ def actualizar_nube(cfg: dict, sb, pedido: int | None = None, forzar: set[str] |
         hoy = date.today()
         datos, info = fuentes.obtener(cfg, forzar, hoy)
         res = procesar(datos, info, hoy, cfg)
-        sb = type(sb)(cfg["supabase"])  # token nuevo: las consultas mensuales pueden tardar más de una hora
+        # Token nuevo antes de cada subida: con la red lenta o la PC en reposo, una sesión de Supabase (1 h) no alcanza
+        def subir(ruta, contenido, tipo):
+            t = reloj.time()
+            type(sb)(cfg["supabase"]).subir(ruta, contenido, tipo)
+            logging.info("Subido %s (%.0f KB, %.0f s)", ruta, len(contenido) / 1024, reloj.time() - t)
         for nombre, contenido in res["pestanas"].items():
-            sb.subir(f"pestanas/{nombre}.json.gz", salidas.comprimir(salidas.a_json(contenido)), "application/gzip")
-        sb.subir("ia/resumen.json.gz", salidas.comprimir(salidas.a_json(res["ia"])), "application/gzip")
+            subir(f"pestanas/{nombre}.json.gz", salidas.comprimir(salidas.a_json(contenido)), "application/gzip")
+        subir("ia/resumen.json.gz", salidas.comprimir(salidas.a_json(res["ia"])), "application/gzip")
         # base completa para la descarga filtrada desde la app (mismas columnas del Excel)
-        sb.subir("descargas/base.json.gz", salidas.comprimir(salidas.a_json(salidas.base_json(res["base"]))), "application/gzip")
-        sb.subir("descargas/base.xlsx", salidas.excel(res["base"]),
-                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        subir("descargas/base.json.gz", salidas.comprimir(salidas.a_json(salidas.base_json(res["base"]))), "application/gzip")
+        subir("descargas/base.xlsx", salidas.excel(res["base"]), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        sb = type(sb)(cfg["supabase"])
         sb.rpc("cvc_registrar_carga", {"p_meta": json.loads(salidas.a_json(res["meta"]))})
         msg = f"{res['meta']['conteos']['cosecha']:,} créditos cargados"
         logging.info(msg)
@@ -94,6 +98,7 @@ def actualizar_nube(cfg: dict, sb, pedido: int | None = None, forzar: set[str] |
     except Exception as e:
         logging.exception("Error en la actualización")
         if pedido:
+            sb = type(sb)(cfg["supabase"])
             sb.actualizar("cvc_actualizaciones", f"id=eq.{pedido}",
                           {"estado": "error", "terminado_en": ahora(), "mensaje": str(e)[:500]})
         raise

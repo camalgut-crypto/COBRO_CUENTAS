@@ -217,6 +217,7 @@ def construir(d: dict[str, pd.DataFrame], hoy: date | None = None) -> tuple[pd.D
     cend["valor_vencido"] = num(cd["dco_valor_vencido"])
     cend["rodamiento"] = txt(cd["dco_rodamiento"])
     cend["cargo"] = txt(cd["dco_cargo"].astype("object").map(lambda v: None if v is None else str(v)))
+    cend["recaudo_total"] = num(cd["dco_recaudo_total"]) if "dco_recaudo_total" in cd else np.nan
 
     # Genesis: una fila por crédito (la aprobación más reciente)
     ge = d["genesis"].copy()
