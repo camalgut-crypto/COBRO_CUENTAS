@@ -299,6 +299,19 @@ def excel(b: pd.DataFrame) -> bytes:
     return buf.getvalue()
 
 
+def seguimiento(seg: dict) -> dict:
+    """Pestaña Primeros Pagos – Seguimiento: una fila por cuota 1PD con sus indicadores a la misma fecha (d_) y al cierre (c_)."""
+    from .pp_seguimiento import DIMS as DIMS_SEG
+    t = seg["tabla"]
+    dims = ["mes_cobro", "dia_vence", "credito"] + [c for c in DIMS_SEG if c in t] + ["d_rod", "c_rod"]
+    for c in dims:
+        if c not in ("d_rod", "c_rod"):
+            t[c] = t[c].astype("object").where(t[c].notna(), "SIN DATO")
+    t["dia_pago"] = t["dia_pago"].map(lambda v: v if v == "SIN DATO" else str(int(float(v)))) if "dia_pago" in t else None
+    medidas = ["w"] + [c for c in t.columns if c[:2] in ("d_", "c_") and c not in ("d_rod", "c_rod")]
+    return _columnar(t, dims, medidas, {"fila": [int(i) for i in t["index"]], "meta": seg["meta"]})
+
+
 def base_json(b: pd.DataFrame) -> dict:
     """Base completa (columnas del Excel) en formato columnar para que la app descargue solo las filas filtradas.
     Textos con diccionario (se repiten mucho), fechas como texto ISO, números tal cual. Mismo orden de filas que la base."""

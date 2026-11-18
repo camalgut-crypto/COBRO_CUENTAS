@@ -25,7 +25,7 @@ LOG = RAIZ / "worker" / "logs" / "actualizar.log"
 LOCAL = RAIZ / "public" / "local"
 
 
-def procesar(datos: dict, info: dict, hoy: date) -> dict:
+def procesar(datos: dict, info: dict, hoy: date, cfg: dict | None = None) -> dict:
     t0 = reloj.time()
     b, g, avisos = base.construir(datos, hoy)
     for a in avisos:
@@ -39,6 +39,12 @@ def procesar(datos: dict, info: dict, hoy: date) -> dict:
                     "primeros_pagos": int(b["primer_pago_mes"].sum()), "gestiones": len(g)},
     }
     res = {"meta": meta, "pestanas": salidas.pestañas(b, g, hoy), "ia": salidas.resumen_ia(b, g, hoy), "base": b}
+    if cfg:   # Primeros Pagos – Seguimiento (historial de 13 meses desde SQL); si falla, la carga sigue sin esa pestaña
+        try:
+            from cvc import pp_seguimiento
+            res["pestanas"]["primeros_pagos"]["seguimiento"] = salidas.seguimiento(pp_seguimiento.generar(cfg["servidor"], b, hoy))
+        except Exception:
+            logging.exception("Seguimiento de Primeros Pagos: no se pudo generar; la carga sigue sin él")
     logging.info("Base: %s créditos, %s gestiones (%.0f s)", f"{len(b):,}", f"{len(g):,}", reloj.time() - t0)
     return res
 
@@ -68,7 +74,7 @@ def actualizar_nube(cfg: dict, sb, pedido: int | None = None, forzar: set[str] |
     try:
         hoy = date.today()
         datos, info = fuentes.obtener(cfg, forzar, hoy)
-        res = procesar(datos, info, hoy)
+        res = procesar(datos, info, hoy, cfg)
         sb = type(sb)(cfg["supabase"])  # token nuevo: las consultas mensuales pueden tardar más de una hora
         for nombre, contenido in res["pestanas"].items():
             sb.subir(f"pestanas/{nombre}.json.gz", salidas.comprimir(salidas.a_json(contenido)), "application/gzip")

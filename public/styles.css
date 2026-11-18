@@ -192,3 +192,20 @@ table.piv td.tot { font-weight: 700; }
 .armar .graficos { margin: 10px 0 0; }
 .armar .graf { box-shadow: none; border: 1px solid var(--borde); }
 .armar .graf .tabla-caja { max-height: 420px; }
+
+/* Primeros Pagos – Seguimiento */
+.segctl { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; margin: 0 0 12px; }
+.segbtns { display: flex; align-items: center; gap: 0; }
+.segbtns span { font-size: 12px; font-weight: 700; color: var(--gris); margin-right: 8px; }
+.segbtns button { border: 1px solid var(--borde); background: #fff; color: var(--navy); padding: 6px 12px; font-size: 13px; cursor: pointer; }
+.segbtns button:first-of-type { border-radius: 8px 0 0 8px; }
+.segbtns button:last-of-type { border-radius: 0 8px 8px 0; border-left: 0; }
+.segbtns button.on { background: var(--navy); color: #fff; border-color: var(--navy); font-weight: 700; }
+.seg-tabla { max-height: none; }
+.seg-tabla th { cursor: default; }
+.seg-tabla tr.grupo td { background: #EEF2F8 !important; color: var(--navy); font-weight: 700; padding-top: 10px; }
+.seg-tabla td.mejor { color: var(--verde-osc); font-weight: 700; }
+.seg-tabla td.peor { color: var(--rojo); font-weight: 700; }
+.seg-tabla td.fondo-ambar { background: #FFF1DC !important; }
+.seg-tabla td.fondo-rojo { background: #FDE2E3 !important; color: var(--rojo); font-weight: 700; }
+.alerta-txt { color: var(--rojo); }

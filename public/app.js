@@ -15,6 +15,7 @@ const PESTANAS = [
   { id: 'cosecha', t: 'Cosecha', roles: ['admin', 'gerencia'] },
   { id: 'cartera_activa', t: 'Cartera Activa', roles: ['admin', 'gerencia', 'cobro'] },
   { id: 'primeros_pagos', t: 'Primeros Pagos', roles: ['admin', 'gerencia', 'cobro', 'comercial'] },
+  { id: 'pp_seguimiento', t: 'Primeros Pagos – Seguimiento', roles: ['admin', 'gerencia', 'cobro', 'comercial'] },
   { id: 'cono', t: 'Cono de cobranza', roles: ['admin', 'gerencia'] },
 ];
 const slug = s => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
@@ -46,6 +47,8 @@ const DIM = {
   producto_madre: 'Producto Madre', resultado_motor: 'Resultado motor', status_promesa_pago: 'Status promesa',
   dealer_genesis: 'Dealer', suc_dealer: 'Sucursal dealer', con_excepcion: 'Con Excepcion', con_prima: 'Con Prima',
   dia_pago: 'Día de pago', tipo_salario: 'Tipo salario', primera_cuota: 'Primera cuota',
+  mes_cobro: 'Mes de la primera cuota', dia_vence: 'Vence', d_rod: 'Rodamiento Cendoc (misma fecha)', c_rod: 'Rodamiento Cendoc (cierre)',
+  d_pd: 'En 1PD (misma fecha)', c_pd: 'En 1PD (cierre)', credito: 'Crédito',
   fpd_estado: 'Estado FPD', rg_predictivo: 'Regla: predictivo (día 0 a 2)', rg_fila: 'Regla: llamada de gestor (día 1 a 2)',
   rg_gestor: 'Regla: alguna gestión de gestor', rg_referencias: 'Regla: referencias (desde día 5)', rg_visita: 'Regla: visita de campo',
 };
@@ -151,6 +154,11 @@ async function leerMeta() {
 
 async function bajar(tab) {
   if (S.datos[tab]) return S.datos[tab];
+  if (tab === 'pp_seguimiento') {   // viaja dentro del archivo de Primeros Pagos (mismos permisos)
+    const p = await bajar('primeros_pagos');
+    if (!p.seguimiento) throw new Error('el seguimiento todavía no se ha generado; se incluye en la próxima actualización');
+    return (S.datos[tab] = p.seguimiento);
+  }
   let d;
   if (LOCAL) d = await (await fetch(`local/${tab}.json`, { cache: 'no-store' })).json();
   else {
@@ -268,7 +276,7 @@ function filtrosActivos() {
 }
 
 const nomFiltro = k => (k === '_grupo' ? 'Mora Actual' : k === 'desde' ? 'Desde' : k === 'hasta' ? 'Hasta' : DIM[k] || CONO_DIMS[k] || k);
-const valFiltro = (k, v) => (Array.isArray(v) ? v.map(x => valFiltro(k, x)).join(', ') : k === '_grupo' ? MORA_GRUPOS[v] : k === 'mes_desembolso' ? fMes(v) : ['primera_cuota', 'desde', 'hasta', 'dia'].includes(k) ? fDia(v) : v);
+const valFiltro = (k, v) => (Array.isArray(v) ? v.map(x => valFiltro(k, x)).join(', ') : k === '_grupo' ? MORA_GRUPOS[v] : ['mes_desembolso', 'mes_cobro'].includes(k) ? fMes(v) : ['primera_cuota', 'desde', 'hasta', 'dia', 'dia_vence'].includes(k) ? fDia(v) : v);
 
 function pintarChips() {
   const F = S.tab === 'cono' ? S.cono : S.f;
@@ -718,6 +726,214 @@ function reglasFPD(D, idx) {
   });
 }
 
+// ---------- Pestaña Primeros Pagos – Seguimiento (enfoque del Informe 1PD, con reglas de cobro) ----------
+// Una fila por cuota 1PD (primera cuota) de los últimos 13 meses; cada indicador viene medido "a la misma fecha"
+// (prefijo d_: el día del mes de hoy) y "al cierre" (prefijo c_: fin de mes, indicador oficial). Filtros y clic aplican.
+const SEG_IND = [
+  { g: 'Resultado', id: 'inc', t: 'Incumplimiento 1PD (indicador oficial)', r: ['pd'], mejor: 'bajo', f: fP },
+  { g: 'Resultado', id: 'm5', t: 'Mora a 5 días hábiles del vencimiento', r: ['m5'], mejor: 'bajo', f: fP },
+  { g: 'Oportunidad', id: 'prev', t: 'Gestión preventiva (3 días hábiles previos)', r: ['prev'], mejor: 'alto', f: fP },
+  { g: 'Oportunidad', id: 'm1', t: 'En mora el primer día hábil después del vencimiento', r: ['m1'], mejor: 'bajo', f: fP },
+  { g: 'Oportunidad', id: 'gd1', t: 'Gestionadas el primer día hábil de mora', r: ['gd1'], mejor: 'alto', f: fP },
+  { g: 'Oportunidad', id: 'tel12', t: 'Llamada en los 2 primeros días hábiles de mora', r: ['tel12'], mejor: 'alto', f: fP },
+  { g: 'Oportunidad', id: 'pago2', t: 'Salen de mora a más tardar el 2.º día hábil', r: ['pago2'], mejor: 'alto', f: fP },
+  { g: 'Cobertura en mora', id: 'kpi2', t: 'KPI 2 gestiones/día en mora sin promesa', c: ['dsp2', 'dsp'], mejor: 'alto', f: fP, pct: true },
+  { g: 'Cobertura en mora', id: 'sing', t: 'Días en mora sin promesa y sin gestión', c: ['dsp0', 'dsp'], mejor: 'bajo', f: fP, pct: true },
+  { g: 'Cobertura en mora', id: 'singc', t: 'Cuentas en mora sin ninguna gestión', n: 'sing', mejor: 'bajo' },
+  { g: 'Cobertura en mora', id: 'gxc', t: 'Gestiones de cobro por cuenta en mora', c: ['gm', 'm1c'], mejor: 'alto', f: v => fDec(v, 1) },
+  { g: 'Promesas', id: 'pxc', t: 'Promesas por cuenta en mora', c: ['prn', 'm1c'], mejor: 'alto', f: v => fDec(v, 1) },
+  { g: 'Promesas', id: 'plazo', t: 'Plazo promedio de la promesa (días hábiles)', c: ['prplazo', 'prn'], sinPeso: true, mejor: 'bajo', f: v => fDec(v, 1) },
+  { g: 'Promesas', id: 'cumple', t: 'Promesas cumplidas', c: ['prok', 'prev_n'], mejor: 'alto', f: fP, pct: true },
+  { g: 'Promesas', id: 'gact', t: 'Gestiones por día con promesa activa', c: ['gca', 'dca'], sinPeso: true, mejor: 'alto', f: v => fDec(v, 1) },
+  { g: 'Visitas y riesgo', id: 'vis', t: 'Visitas físicas en mora (cuentas)', vis: true, mejor: 'alto' },
+  { g: 'Visitas y riesgo', id: 'visrpc', t: 'Visitas con contacto del titular', c: ['visrpc', 'visg'], sinPeso: true, mejor: 'alto', f: fP, pct: true },
+  { g: 'Visitas y riesgo', id: 'sintel', t: 'Incumplidas sin contacto telefónico con el titular', r: ['sintel'], mejor: 'bajo', f: fP },
+  { g: 'Reglas de cobro FPD', id: 'r_pred', t: 'Predictivo Wolkvox (día 0 a 2)', r: ['r_pred'], mejor: 'alto', f: fP },
+  { g: 'Reglas de cobro FPD', id: 'r_fila', t: 'Fila MCC: llamada al cliente (día 1 a 2)', r: ['r_fila'], mejor: 'alto', f: fP },
+  { g: 'Reglas de cobro FPD', id: 'r_gestor', t: 'Alguna gestión de gestor desde el día 1', r: ['r_gestor'], mejor: 'alto', f: fP },
+  { g: 'Reglas de cobro FPD', id: 'r_ref', t: 'Referencias desde el día 5 de mora', r: ['r_ref'], mejor: 'alto', f: fP },
+  { g: 'Reglas de cobro FPD', id: 'r_vis', t: 'Visita de campo (saldo ≥ C$12,000)', r: ['r_vis'], mejor: 'alto', f: fP },
+];
+const fDec = (v, d) => (v == null || !isFinite(v) ? '—' : v.toLocaleString('es-NI', { minimumFractionDigits: d, maximumFractionDigits: d }));
+const ROD_ORDEN = ['MEJORA', 'MANTIENE', 'DESMEJORA', 'CANCELADO', 'SIN DATO'];
+const ROD_COLOR = [SERIE[0], SERIE[1], SERIE[2], GRIS, '#E6E8EC'];
+
+function segAgregar(D, idx) {
+  const k = S.seg.k, by = S.seg.by, col = c => D.datos[`${k}_${c}`];
+  const W = D.datos.w, meses = D.meta.meses;
+  const m = Object.fromEntries(meses.map(x => [x, { n: 0, w: 0, incl: 0, inclw: 0, pdn: 0, pdw: 0, r: {}, c: {}, sing: 0, singw: 0, visg: 0, visc: 0, visw: 0, m1c: 0 }]));
+  const cols = new Set(['pd', 'm5', 'prev', 'm1', 'gd1', 'tel12', 'pago2', 'sintel', 'r_pred', 'r_fila', 'r_gestor', 'r_ref', 'r_vis']);
+  const sumas = ['dsp2', 'dsp', 'dsp0', 'gm', 'prn', 'prplazo', 'prok', 'prev_n', 'gca', 'dca', 'visrpc', 'visg'];
+  const C = Object.fromEntries([...cols, ...sumas, 'incl', 'sing', 'm1'].map(c => [c, col(c)]));
+  for (const i of idx) {
+    const a = m[dv(D, 'mes_cobro', i)]; if (!a) continue;
+    const w = by === 'n' ? 1 : (W[i] || 0);
+    a.n++; a.w += W[i] || 0;
+    if (C.incl[i]) { a.incl++; a.inclw += W[i] || 0; }
+    if (C.pd[i] === 1) { a.pdn++; a.pdw += W[i] || 0; }
+    for (const c of cols) { const v = C[c][i]; if (v == null) continue; const r = a.r[c] || (a.r[c] = [0, 0]); r[0] += v * w; r[1] += w; }
+    for (const c of sumas) { const v = C[c][i]; if (v == null) continue; const r = a.c[c] || (a.c[c] = [0, 0]); r[0] += v * w; r[1] += v; }
+    if (C.m1[i] === 1) a.m1c += w;
+    if (C.sing[i] === 1) { a.sing++; a.singw += W[i] || 0; }
+    const vg = C.visg[i]; if (vg) { a.visg += vg; a.visc++; a.visw += W[i] || 0; }
+  }
+  return m;
+}
+
+function segValor(I, a) {
+  if (!a) return null;
+  if (I.r) { const r = a.r[I.r[0]]; return r && r[1] ? (100 * r[0]) / r[1] : null; }
+  if (I.c) {
+    const [nu, de] = I.c, pick = c => (c === 'm1c' ? a.m1c : (a.c[c] || [0, 0])[I.sinPeso ? 1 : 0]);
+    const den = pick(de); return den ? (I.pct ? 100 : 1) * pick(nu) / den : null;
+  }
+  if (I.n) return S.seg.by === 'n' ? a.sing : a.singw;
+  if (I.vis) return a.visc;
+  return null;
+}
+const segFmt = I => (I.f || (S.seg.by === 'w' && I.n ? fM : fN));
+
+function pintarSeguimiento(D) {
+  S.seg = S.seg || { k: 'd', by: 'n', mes: null };
+  const meses = D.meta.meses, actual = meses[meses.length - 1], cerrados = meses.slice(0, -1);
+  const idx = filas(D, filtrosActivos());
+  const A = segAgregar(D, idx);
+  const k = S.seg.k, corte = m => D.meta.cortes[m][k === 'd' ? 'dia' : 'cierre'];
+  const dHoy = +D.meta.hoy.slice(8);
+  $('segCtl').hidden = false;
+  $('segCtl').innerHTML = `<div class="segbtns"><span>Medir cada mes</span>`
+    + `<button type="button" data-segk="d" class="${k === 'd' ? 'on' : ''}">A la misma fecha (día ${dHoy})</button>`
+    + `<button type="button" data-segk="c" class="${k === 'c' ? 'on' : ''}">Al cierre del mes</button></div>`
+    + `<div class="segbtns"><span>Ver en</span><button type="button" data-segby="n" class="${S.seg.by === 'n' ? 'on' : ''}">Cantidad de cuentas</button>`
+    + `<button type="button" data-segby="w" class="${S.seg.by === 'w' ? 'on' : ''}">Saldo pagaré</button></div>`
+    + `<span class="small muted">Fotos: MCCollect ${fDia(D.meta.foto_mccollect)} · Cendoc ${fDia(D.meta.foto_cendoc)} · ${fMes(actual)} medido a hoy en las dos opciones.</span>`;
+
+  const prom = I => { const v = cerrados.map(m => segValor(I, A[m])).filter(x => x != null); return v.length ? v.reduce((s, x) => s + x, 0) / v.length : null; };
+  const peor = (I, v, ref) => v != null && ref != null && (I.mejor === 'bajo' ? v > ref : v < ref);
+  const ind = id => SEG_IND.find(x => x.id === id);
+  const kp = (id, l, clase) => {
+    const I = ind(id), v = segValor(I, A[actual]), ref = prom(I);
+    return [l, segFmt(I)(v), `promedio ${cerrados.length} meses: ${segFmt(I)(ref)}${peor(I, v, ref) ? ' · peor' : ' · mejor o igual'}`, peor(I, v, ref) ? 'rojo' : clase];
+  };
+  kpis([
+    kp('inc', `1PD ${fMes(actual)} (al ${fDia(D.meta.hoy)})`, 'navy'), kp('m5', 'Mora a 5 días hábiles', 'cielo'),
+    kp('gd1', 'Gestionadas el 1.er día de mora', ''), kp('sing', 'Días en mora sin gestión', 'naranja'),
+    kp('cumple', 'Promesas cumplidas', 'lima'), kp('r_gestor', 'Regla: gestión de gestor', 'amarillo'),
+  ]);
+
+  const etiq = meses.map(m => fMes(m) + (m === actual ? '*' : ''));
+  const colores = I => meses.map(m => { const v = segValor(I, A[m]), ref = prom(I); return m === actual ? (peor(I, v, ref) ? '#EE232E' : SERIE[1]) : peor(I, v, ref) ? SERIE[2] : SERIE[1]; });
+  const mesSel = S.seg.mes && meses.includes(S.seg.mes) ? S.seg.mes : actual;
+  const nota = k === 'd' ? `Cada mes medido a su día ${dHoy}` : 'Cada mes medido a su cierre';
+  $('graficos').innerHTML =
+    tarjeta('gSegInc', 'Incumplimiento 1PD por mes', `${nota}: cuotas con 1 o más cuotas vencidas en la foto de MCCollect del corte, sobre las cuotas ya vencidas. Ámbar: peor que el promedio de los meses cerrados; rojo: el mes en curso peor que ese promedio.`, { ancho: true })
+    + `<article class="graf ancho"><div class="cab"><h3>Indicadores de gestión de la primera cuota</h3><span class="small muted">${nota}. Verde: mejor mes; rojo: peor mes cerrado; fondo ámbar: peor que el promedio; fondo rojo: mes en curso peor que el promedio.</span></div><div class="tabla-caja seg-tabla" id="segTabla"></div></article>`
+    + tarjeta('gSegM5', 'Mora a 5 días hábiles', 'Comparable entre meses: cuotas con 6 días hábiles observados.', {})
+    + tarjeta('gSegGd1', 'Gestionadas el primer día de mora', '% de las cuentas en mora al día siguiente del vencimiento.', {})
+    + tarjeta('gSegSing', 'Días en mora sin gestión', '% de los días en mora sin promesa; menos es mejor.', {})
+    + tarjeta('gSegReg', 'Cumplimiento de las reglas de cobro FPD', 'Cuentas en mora que cumplen cada regla (cono de MCCollect).', { leyenda: [['Predictivo', SERIE[3]], ['Fila MCC', SERIE[1]], ['Gestión de gestor', SERIE[0]], ['Referencias', SERIE[2]], ['Visita', '#06255B']] })
+    + tarjeta('gSegRod', 'Rodamiento de Cendoc a la fecha de corte', 'Cuotas 1PD ya vencidas según el rodamiento de Cendoc en la foto del corte.', { leyenda: ROD_ORDEN.map((t, j) => [t, ROD_COLOR[j]]) })
+    + tarjeta('gSegCos', 'Mora a 5 días hábiles por mes de colocación', 'Mes de desembolso con 100 cuotas o más observadas a 5 días hábiles.', {})
+    + tarjeta('gSegVen', `${fMes(mesSel)}${mesSel === actual ? '*' : ''} por fecha de vencimiento`, `Cuotas según el día en que vencen y cómo están al corte (${fDia(corte(mesSel))}).`, { ancho: true, leyenda: [['Al día', SERIE[0]], ['En 1PD', '#EE232E'], ['Por vencer', GRIS]] })
+    + (veTablas() ? `<article class="graf ancho"><div class="cab"><h3>Cuentas en 1PD</h3><label class="small">Mes <select id="segMes">${meses.slice().reverse().map(m => `<option value="${m}"${m === mesSel ? ' selected' : ''}>${fMes(m)}${m === actual ? '*' : ''}</option>`).join('')}</select></label></div><p class="nota">Gestiones desde 3 días hábiles antes del vencimiento hasta el corte. Ordenadas por vencimiento y saldo.</p><div class="tabla-caja" id="segLista"></div></article>` : '');
+
+  const I1 = ind('inc');
+  barrasSimples('gSegInc', etiq, meses.map(m => segValor(I1, A[m])), {
+    horizontal: false, fmt: fP, color: colores(I1),
+    extra: it => { const a = A[meses[it[0].dataIndex]]; return [`${fN(a.pdn)} de ${fN(a.incl)} cuotas vencidas en 1PD`, `Saldo pagaré en 1PD ${fM(a.pdw)} de ${fM(a.inclw)}`, `Corte: ${fDia(corte(meses[it[0].dataIndex]))}`]; },
+    clic: j => ({ mes_cobro: meses[j] }),
+  });
+  for (const [id, I] of [['gSegM5', ind('m5')], ['gSegGd1', ind('gd1')], ['gSegSing', ind('sing')]]) {
+    barrasSimples(id, etiq, meses.map(m => segValor(I, A[m])), { horizontal: false, fmt: fP, color: colores(I), extra: it => [`Promedio meses cerrados: ${fP(prom(I))}`], clic: j => ({ mes_cobro: meses[j] }) });
+  }
+  const RG = [['r_pred', 'Predictivo', SERIE[3]], ['r_fila', 'Fila MCC', SERIE[1]], ['r_gestor', 'Gestión de gestor', SERIE[0]], ['r_ref', 'Referencias', SERIE[2]], ['r_vis', 'Visita', '#06255B']];
+  lineas('gSegReg', etiq, RG.map(([id, t, c]) => ({ t, c, v: meses.map(m => segValor(ind(id), A[m])) })), { fmt: fP, clic: j => ({ mes_cobro: meses[j] }) });
+
+  // Cendoc: rodamiento al corte
+  const rod = meses.map(() => Object.fromEntries(ROD_ORDEN.map(r => [r, 0])));
+  const rodCol = D.datos[`${k}_rod`], incl = D.datos[`${k}_incl`];
+  for (const i of idx) {
+    if (!incl[i]) continue;
+    const j = meses.indexOf(dv(D, 'mes_cobro', i)); if (j < 0) continue;
+    let r = rodCol[i] == null ? 'SIN DATO' : D.dic[`${k}_rod`][rodCol[i]]; if (!ROD_ORDEN.includes(r)) r = 'SIN DATO';
+    rod[j][r] += S.seg.by === 'n' ? 1 : D.datos.w[i] || 0;
+  }
+  barrasApiladas('gSegRod', etiq, ROD_ORDEN.map((r, j) => ({ t: r, c: ROD_COLOR[j], v: rod.map(x => { const t = Object.values(x).reduce((s, y) => s + y, 0); return pct(x[r], t); }) })), {
+    cien: true, etiqueta: c => `${c.dataset.label}: ${fP(c.raw)} · ${S.seg.by === 'n' ? fN(rod[c.dataIndex][c.dataset.label]) + ' cuentas' : fM(rod[c.dataIndex][c.dataset.label])}`,
+    clic: (j, g) => (g == null ? { mes_cobro: meses[j] } : { mes_cobro: meses[j], [`${k}_rod`]: ROD_ORDEN[g] }),
+  });
+
+  // Mora a 5 días por mes de colocación (todas las cuotas con 5 días hábiles observados)
+  const m5 = D.datos[`${k}_m5`], cos = new Map();
+  for (const i of idx) { const v = m5[i]; if (v == null) continue; const c = dv(D, 'mes_desembolso', i); const a = cos.get(c) || { n: 0, x: 0, w: 0, xw: 0 }; a.n++; a.x += v; a.w += D.datos.w[i] || 0; a.xw += v * (D.datos.w[i] || 0); cos.set(c, a); }
+  const cl = [...cos.entries()].filter(([, a]) => a.n >= 100).sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+  const vcos = cl.map(([, a]) => (S.seg.by === 'n' ? pct(a.x, a.n) : pct(a.xw, a.w)));
+  const pcos = vcos.length ? vcos.reduce((s, x) => s + x, 0) / vcos.length : null;
+  barrasSimples('gSegCos', cl.map(([c]) => fMes(c)), vcos, {
+    horizontal: false, fmt: fP, color: vcos.map(v => (v > pcos * 1.1 ? SERIE[2] : SERIE[1])),
+    extra: it => { const a = cl[it[0].dataIndex][1]; return [`${fN(a.x)} de ${fN(a.n)} cuotas en mora a 5 días`, `Promedio ${fP(pcos)}; ámbar: más de 10% por encima`]; },
+    clic: j => ({ mes_desembolso: cl[j][0] }),
+  });
+
+  // Mes seleccionado por fecha de vencimiento
+  const pdC = D.datos[`${k}_pd`], ven = new Map();
+  for (const i of idx) {
+    if (dv(D, 'mes_cobro', i) !== mesSel) continue;
+    const f = dv(D, 'dia_vence', i), a = ven.get(f) || { ok: 0, pd: 0, pv: 0, w: [0, 0, 0] }, w = D.datos.w[i] || 0;
+    if (!incl[i]) { a.pv++; a.w[2] += w; } else if (pdC[i] === 1) { a.pd++; a.w[1] += w; } else { a.ok++; a.w[0] += w; }
+    ven.set(f, a);
+  }
+  const fechasV = [...ven.keys()].sort();
+  const vv = key => fechasV.map(f => (S.seg.by === 'n' ? ven.get(f)[key] : ven.get(f).w[{ ok: 0, pd: 1, pv: 2 }[key]]));
+  barrasApiladas('gSegVen', fechasV.map(fDia), [{ t: 'Al día', c: SERIE[0], v: vv('ok') }, { t: 'En 1PD', c: '#EE232E', v: vv('pd') }, { t: 'Por vencer', c: GRIS, v: vv('pv') }], {
+    todas: true, fmt: S.seg.by === 'n' ? fN : fM,
+    extra: it => { const a = ven.get(fechasV[it[0].dataIndex]), t = a.ok + a.pd; return [`${fN(a.pd)} en 1PD de ${fN(t)} vencidas (${fP(pct(a.pd, t))})`]; },
+    clic: j => ({ dia_vence: fechasV[j] }),
+  });
+
+  // Tabla de indicadores
+  let html = `<table><thead><tr><th>Indicador</th>${etiq.map(e => `<th class="num">${e}</th>`).join('')}<th class="num">Promedio cerrados</th></tr></thead><tbody>`;
+  let grupo = '';
+  for (const I of SEG_IND) {
+    if (I.g !== grupo) { grupo = I.g; html += `<tr class="grupo"><td colspan="${meses.length + 2}">${grupo}</td></tr>`; }
+    const vals = meses.map(m => segValor(I, A[m])), ref = prom(I), cer = vals.slice(0, -1).filter(v => v != null);
+    const mejorV = cer.length ? (I.mejor === 'bajo' ? Math.min(...cer) : Math.max(...cer)) : null;
+    const peorV = cer.length ? (I.mejor === 'bajo' ? Math.max(...cer) : Math.min(...cer)) : null;
+    const f = segFmt(I);
+    html += `<tr><td>${I.t}</td>${vals.map((v, j) => {
+      const cur = j === meses.length - 1, cls = [];
+      if (v != null && !cur && v === mejorV) cls.push('mejor'); else if (v != null && !cur && v === peorV) cls.push('peor');
+      if (peor(I, v, ref)) cls.push(cur ? 'fondo-rojo' : 'fondo-ambar');
+      return `<td class="num ${cls.join(' ')}">${v == null ? '—' : f(v)}</td>`;
+    }).join('')}<td class="num tot">${ref == null ? '—' : f(ref)}</td></tr>`;
+  }
+  html += `<tr class="grupo"><td colspan="${meses.length + 2}">Base</td></tr>`
+    + `<tr><td>Cuotas 1PD ya vencidas al corte</td>${meses.map(m => `<td class="num">${S.seg.by === 'n' ? fN(A[m].incl) : fM(A[m].inclw)}</td>`).join('')}<td></td></tr>`
+    + `<tr><td>En 1PD al corte</td>${meses.map(m => `<td class="num">${S.seg.by === 'n' ? fN(A[m].pdn) : fM(A[m].pdw)}</td>`).join('')}<td></td></tr>`
+    + `<tr><td>Fecha de corte</td>${meses.map(m => `<td class="num">${fDia(corte(m))}</td>`).join('')}<td></td></tr>`;
+  $('segTabla').innerHTML = html + '</tbody></table>';
+
+  // Lista de cuentas en 1PD del mes elegido
+  if (veTablas()) {
+    const L = [];
+    for (const i of idx) if (dv(D, 'mes_cobro', i) === mesSel && pdC[i] === 1) L.push(i);
+    L.sort((a, b) => String(dv(D, 'dia_vence', a)).localeCompare(String(dv(D, 'dia_vence', b))) || (D.datos.w[b] || 0) - (D.datos.w[a] || 0));
+    const g = c => D.datos[`${k}_${c}`];
+    $('segLista').innerHTML = `<table><thead><tr><th>Cuenta</th><th>Vence</th><th>Colocación</th><th>Producto</th><th>Sucursal</th><th class="num">Saldo pagaré</th><th class="num">Cuotas vencidas</th><th class="num">Gestiones</th><th class="num">Promesas</th><th class="num">Visitas</th><th>Contacto titular</th><th>Rodamiento</th></tr></thead><tbody>`
+      + L.map(i => `<tr><td>${esc(dv(D, 'credito', i))}</td><td>${fDia(dv(D, 'dia_vence', i))}</td><td>${fMes(dv(D, 'mes_desembolso', i))}</td><td>${esc(dv(D, 'producto_comercial', i))}</td><td>${esc(dv(D, 'sucursal', i))}</td>`
+        + `<td class="num">${fN(D.datos.w[i])}</td><td class="num">${fN(g('cv')[i])}</td><td class="num">${fN(g('ng')[i])}</td><td class="num">${fN(g('nprom')[i])}</td><td class="num">${fN(g('nvis')[i])}</td><td>${g('rpc')[i] ? 'Sí' : '<b class="alerta-txt">No</b>'}</td><td>${esc(dv(D, `${k}_rod`, i) || '')}</td></tr>`).join('')
+      + (L.length ? '' : '<tr><td colspan="12">Sin cuentas en 1PD con los filtros aplicados.</td></tr>') + '</tbody></table>';
+  }
+}
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-segk],[data-segby]');
+  if (!b) return;
+  if (b.dataset.segk) S.seg.k = b.dataset.segk; else S.seg.by = b.dataset.segby;
+  pintar();
+});
+document.addEventListener('change', e => { if (e.target.id === 'segMes') { S.seg.mes = e.target.value; pintar(); } });
+
 // ---------- Pestaña Cono de cobranza ----------
 function filasCono(T) {
   const f = {};
@@ -946,7 +1162,9 @@ function pintar() {
   $('pivCaja').hidden = true;   // el cuadro mes × tramo de mora solo lo pintan Cosecha y Cartera Activa
   if (!D) { $('kpis').innerHTML = $('graficos').innerHTML = ''; $('tablaCaja').hidden = true; $('armarCaja').hidden = true; $('preguntas').hidden = !CFG.IA_CLAUDE; return; }
   pintarFiltros(D);
-  ({ cosecha: pintarCosecha, cartera_activa: pintarCartera, primeros_pagos: pintarPrimeros, cono: pintarCono })[S.tab](D);
+  $('segCtl').hidden = true;
+  ({ cosecha: pintarCosecha, cartera_activa: pintarCartera, primeros_pagos: pintarPrimeros, cono: pintarCono, pp_seguimiento: pintarSeguimiento })[S.tab](D);
+  if (S.tab === 'pp_seguimiento') $('tablaCaja').hidden = true;
   pintarArmar(D);
   $('btnDescargar').title = S.tab === 'cono' ? 'Descarga la base completa de créditos'
     : 'Descarga en Excel los créditos de esta pestaña con los filtros aplicados';
