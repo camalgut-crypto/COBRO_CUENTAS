@@ -887,7 +887,8 @@ function pintarSeguimiento(D) {
   // Mora a 5 días por mes de colocación (todas las cuotas con 5 días hábiles observados)
   const m5 = D.datos[`${k}_m5`], cos = new Map();
   for (const i of idx) { const v = m5[i]; if (v == null) continue; const c = dv(D, 'mes_desembolso', i); const a = cos.get(c) || { n: 0, x: 0, w: 0, xw: 0 }; a.n++; a.x += v; a.w += D.datos.w[i] || 0; a.xw += v * (D.datos.w[i] || 0); cos.set(c, a); }
-  const cl = [...cos.entries()].filter(([, a]) => a.n >= 100).sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+  const minCos = minimoRelativo([...cos.values()].map(a => a.n));
+  const cl = [...cos.entries()].filter(([, a]) => a.n >= minCos).sort((a, b) => String(a[0]).localeCompare(String(b[0])));
   const vcos = cl.map(([, a]) => (S.seg.by === 'n' ? pct(a.x, a.n) : pct(a.xw, a.w)));
   const pcos = vcos.length ? vcos.reduce((s, x) => s + x, 0) / vcos.length : null;
   barrasSimples('gSegCos', cl.map(([c]) => fMes(c)), vcos, {
@@ -1000,6 +1001,12 @@ function pintarSeguimiento(D) {
 
 
 // ---------- Pestaña Primeros Pagos – Cosecha: el 1PD de cada mes de desembolso, según el mes en que cicla su primera cuota ----------
+// Cosechas con muy pocas cuotas (colas de meses viejos) se ocultan; el mínimo es relativo a la cosecha más grande
+// para que con filtros chicos (p. ej. PYME) no desaparezca todo.
+function minimoRelativo(ns) {
+  return Math.max(1, Math.ceil(0.05 * Math.max(0, ...ns)));
+}
+
 function pintarCosecha1PD(D) {
   S.seg = S.seg || { k: 'd', by: 'w', mes: null };
   const meses = D.meta.meses, actual = meses[meses.length - 1], k = S.seg.k, dHoy = +D.meta.hoy.slice(8);
@@ -1023,7 +1030,8 @@ function pintarCosecha1PD(D) {
     if (pdc[i] === 1) { a.pd += w; a.npd++; }
   }
   const sum = (fila, key) => [...fila.values()].reduce((s, a) => s + a[key], 0);
-  const cosechas = [...M.keys()].filter(c => sum(M.get(c), 'n') >= 100 && c >= mesPrevio).sort();
+  const minCos = minimoRelativo([...M.values()].map(f => sum(f, 'n')));
+  const cosechas = [...M.keys()].filter(c => sum(M.get(c), 'n') >= minCos && c >= mesPrevio).sort();
   const cols = meses;
   const recientes = cosechas.slice(-8);
   kpis(recientes.slice(-4).reverse().map((c, j) => {
