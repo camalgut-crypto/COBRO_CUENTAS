@@ -6,6 +6,8 @@ window.CVC_CONFIG = {
   SUPABASE_URL: 'https://lzgteejsjxrbadsqlpnd.supabase.co',
   SUPABASE_ANON_KEY: 'sb_publishable_3v2gGe5N9Oh1eW-9ywMb1g_3Buo8af8',
   BUCKET: 'cvc',
+  // Qué herramienta es esta copia: 'cuentas' = COBRO_CUENTAS · 'pds' = PDS_COSECHA_CONO_COBRO (mismo código y usuarios)
+  HERRAMIENTA: 'cuentas',
   // Preguntas libres con Claude (tiene costo por uso de la API de Anthropic). En false solo quedan las preguntas
   // guiadas, que son gratis. Para activarla: crear la función cvc-preguntar con el secret ANTHROPIC_API_KEY y poner true.
   IA_CLAUDE: false,

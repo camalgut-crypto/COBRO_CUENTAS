@@ -95,9 +95,9 @@ h2 { font-size: 18px; color: var(--navy); margin: 0 0 4px; font-weight: 800; }
 h3 { font-size: 15px; color: var(--navy); margin: 0 0 8px; font-weight: 700; }
 .tabla-caja { background: #fff; border-radius: 12px; overflow: auto; max-height: 520px; }
 table { border-collapse: collapse; width: 100%; font-size: 13px; }
-th { position: sticky; top: 0; background: var(--verde); color: #fff; text-align: left; padding: 9px 10px; white-space: nowrap; font-weight: 700; cursor: pointer; user-select: none; }
+th { position: sticky; top: 0; background: var(--verde); color: #fff; text-align: left; padding: calc(9px * var(--k, 1)) calc(10px * var(--k, 1)); white-space: nowrap; font-weight: 700; cursor: pointer; user-select: none; }
 th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
-td { padding: 7px 10px; border-bottom: 1px solid #EEF0F3; white-space: nowrap; }
+td { padding: calc(7px * var(--k, 1)) calc(10px * var(--k, 1)); border-bottom: 1px solid #EEF0F3; white-space: nowrap; }
 tbody tr:nth-child(even) td { background: #FAFBFC; }
 tbody tr:hover td { background: var(--verde-10); }
 tr.total td { font-weight: 700; background: var(--verde-20) !important; }
@@ -211,12 +211,21 @@ table.piv td.tot { font-weight: 700; }
 .alerta-txt { color: var(--rojo); }
 
 /* Seguimiento: explicaciones y embudo */
-.seg-tabla td .info { color: var(--cielo); font-size: 11px; cursor: help; }
-.seg-tabla td .desc { display: none; white-space: normal; font-size: 11px; color: var(--gris); max-width: 420px; margin-top: 3px; font-weight: 400; }
+.seg-tabla td .info { color: var(--cielo); font-size: 0.85em; cursor: help; }
+.seg-tabla td .desc { display: none; white-space: normal; font-size: 0.85em; color: var(--gris); max-width: 420px; margin-top: 3px; font-weight: 400; }
 .seg-tabla td:hover .desc { display: block; }
-.seg-tabla td .sub { font-size: 10.5px; color: var(--gris); font-weight: 400; }
+.seg-tabla td .sub { font-size: 0.8em; color: var(--gris); font-weight: 400; }
 .segmes select { padding: 5px 8px; border: 1px solid var(--borde); border-radius: 7px; margin-left: 4px; }
 .kpi.verde { background: var(--verde); }
 .ok-txt { color: var(--verde-osc); }
 .seg-tabla td.clic { cursor: pointer; }
 .seg-tabla td.clic:hover { background: var(--verde-20) !important; }
+
+/* Tablas que se ajustan al ancho (la letra se achica con --k desde app.js) */
+.tabla-caja table { --k: 1; }
+td.motivo { white-space: normal; min-width: 220px; }
+.subtit { font-size: 15px; color: var(--navy); margin: 16px 0 8px; }
+.seg-tabla th .sub { font-size: 0.8em; font-weight: 400; opacity: 0.9; }
+.seg-tabla td.heat { color: #222; }
+.nota-u { list-style: none; margin-top: 4px; }
+.segctl .segbtns + .segbtns { margin-left: 4px; }

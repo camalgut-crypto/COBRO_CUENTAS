@@ -1,11 +1,14 @@
-"""Primeros Pagos – Seguimiento: indicadores de cobranza de la primera cuota (1PD), mes a mes, como el informe
+"""Primeros Pagos – Seguimiento: indicadores de cobranza de las cuotas 1 a 6 (1PD a 6PD), mes a mes, como el informe
 "Informe_1PD_Nicaragua" (carpeta Seguimiento Cobro), pero con datos de SQL y con dos formas de medir cada mes:
 
 - "dia":    a la misma fecha (el día del mes de hoy; si el mes es más corto, su último día).
 - "cierre": al fin de mes (indicador oficial 1PD). El mes en curso se mide a hoy en las dos.
 
-Universo: créditos REGULAR (sin Convenio) del Loan Tape cuya primera cuota cae en los últimos 13 meses.
-1PD oficial = la foto de MCCollect del corte trae 1 o más cuotas vencidas (validado contra el archivo PD: 99.5%).
+Universo de la cuota n: créditos REGULAR (sin Convenio) del Loan Tape cuya cuota n (primera cuota + n-1 meses) cae en
+los últimos 13 meses.
+- nPD (indicador oficial): la foto de MCCollect del corte trae n o más cuotas vencidas, es decir, no pagó ninguna de
+  sus primeras n cuotas (validado 100% contra la marca 1PD-4PD de th_pds_mensual del Power BI, 19-nov-2026).
+- Mora por cuota n: la cuota n quedó sin pagar (1 o más cuotas vencidas), aunque haya pagado las anteriores.
 Días hábiles de lunes a sábado sin feriados, igual que el informe.
 
 Fuentes históricas (fotos diarias):
@@ -15,7 +18,11 @@ Fuentes históricas (fotos diarias):
 Lo ya consultado queda en worker/data/ppseg/ y cada día solo se agrega lo nuevo.
 """
 import logging
+import os
+import warnings
+import shutil
 import time as reloj
+from pathlib import Path
 from datetime import date
 
 import numpy as np
@@ -23,8 +30,13 @@ import pandas as pd
 
 from .conexion import RAIZ, conectar
 
-CACHE = RAIZ / "worker" / "data" / "ppseg"
+# Caché fuera de OneDrive (son cientos de MB que cambian cada día); la primera vez se copia la caché anterior
+CACHE_ANTERIOR = RAIZ / "worker" / "data" / "ppseg"
+CACHE = Path(os.environ.get("LOCALAPPDATA") or (RAIZ / "worker" / "data")) / "CosechasVsCobro" / "ppseg"
 MESES_HIST = 13
+PDS = range(1, 7)                               # 1PD a 6PD
+USUARIOS_EXCLUIDOS = {"jjreyesu"}
+warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)   # columnas agregadas una a una por corte               # gestiones del área comercial, no de cobro (19-nov-2026)
 INICIO_FOTOS = pd.Timestamp("2025-10-01")      # primera foto diaria disponible en MCCollect y Cendoc
 ANTES, DESPUES = 12, 31                         # ventana por crédito alrededor de su primera cuota (días)
 VENT = 15                                       # días hábiles de mora observados por cuota (como el informe)
@@ -50,12 +62,17 @@ def bpos(fechas) -> np.ndarray:
 
 
 # ---------------------------------------------------------------- universo
-def universo(b: pd.DataFrame, hoy: pd.Timestamp) -> tuple[pd.DataFrame, list[str]]:
+def universo(b: pd.DataFrame, hoy: pd.Timestamp, n: int = 1) -> tuple[pd.DataFrame, list[str]]:
+    """Cuotas n (1 = primera cuota) que vencen en los últimos 13 meses; la cuota n vence n-1 meses después de la primera."""
     mes_hoy = hoy.to_period("M")
     meses = [str(p) for p in pd.period_range(mes_hoy - (MESES_HIST - 1), mes_hoy, freq="M")]
     ini, fin = pd.Period(meses[0]).start_time, mes_hoy.end_time.normalize()
-    u = b[(b["producto_madre"] != "CONV") & b["primera_cuota"].between(ini, fin)].copy()
-    u["D"] = u["primera_cuota"].dt.normalize()
+    r = b[(b["producto_madre"] != "CONV") & b["primera_cuota"].notna()].copy()
+    if n > 1:
+        r = r[pd.to_numeric(r["numero_cuotas"], errors="coerce").fillna(99) >= n]
+    base = pd.DatetimeIndex(r["primera_cuota"]).normalize()
+    r["D"] = base + pd.DateOffset(months=n - 1) if n > 1 else base
+    u = r[r["D"].between(ini, fin)].copy()
     u["mes_cobro"] = u["D"].dt.strftime("%Y-%m")
     u["w"] = pd.to_numeric(u["saldopagare"], errors="coerce").fillna(0)
     u["desde"] = (u["D"] - pd.Timedelta(days=ANTES)).clip(lower=INICIO_FOTOS)
@@ -82,7 +99,21 @@ def cortes(meses: list[str], hoy: pd.Timestamp) -> dict[str, dict[str, pd.Timest
 # ---------------------------------------------------------------- extracción con caché
 def _leer(nombre, columnas):
     p = CACHE / f"{nombre}.pkl"
+    if not p.exists() and (CACHE_ANTERIOR / f"{nombre}.pkl").exists():
+        CACHE.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(CACHE_ANTERIOR / f"{nombre}.pkl", p)
     return pd.read_pickle(p) if p.exists() else pd.DataFrame(columns=columnas)
+
+
+def _compacto(df):
+    """Tipos chicos para la caché de cartera (millones de filas con 6 cuotas por crédito)."""
+    df = df.copy()
+    for c in ("cv", "dm", "saldo", "mup"):
+        if c in df:
+            df[c] = pd.to_numeric(df[c], errors="coerce").astype("float32")
+    if "fup" in df:
+        df["fup"] = pd.to_datetime(df["fup"], errors="coerce")
+    return df
 
 
 def _guardar(df, nombre):
@@ -109,7 +140,7 @@ def extraer(cfg: dict, u: pd.DataFrame, meses: list[str], cts: dict, hoy: pd.Tim
     nec["hasta"] = np.minimum(nec["hasta"], ult_car)
     nec = nec[nec["hasta"] >= nec["desde"]]
     nec["f"] = [pd.date_range(a, z) for a, z in zip(nec["desde"], nec["hasta"])]
-    nec = nec[["credito", "f"]].explode("f")
+    nec = nec[["credito", "f"]].explode("f").drop_duplicates()
     hechos = _leer("cartera_pares", ["credito", "f"])
     car = _leer("cartera", ["credito", "f", "cv", "dm", "saldo", "fup", "mup"])
     for df in (nec, hechos, car):   # tipos uniformes para los cruces
@@ -123,7 +154,7 @@ def extraer(cfg: dict, u: pd.DataFrame, meses: list[str], cts: dict, hoy: pd.Tim
     if len(falta):
         # se sube solo la ventana de cada crédito (pocos miles de filas) y se pide una fecha a la vez
         cur.execute("CREATE TABLE #m (credito VARCHAR(30) PRIMARY KEY, desde DATE, hasta DATE)")
-        k = u[["credito", "desde", "hasta"]].drop_duplicates("credito")
+        k = u.groupby("credito", as_index=False).agg(desde=("desde", "min"), hasta=("hasta", "max"))[["credito", "desde", "hasta"]]
         cur.executemany("INSERT INTO #m VALUES (?, ?, ?)",
                         [(c, a.strftime("%Y-%m-%d"), z.strftime("%Y-%m-%d")) for c, a, z in k.itertuples(index=False)])
         nuevas = []
@@ -144,6 +175,7 @@ def extraer(cfg: dict, u: pd.DataFrame, meses: list[str], cts: dict, hoy: pd.Tim
         car = pd.concat([car[~pd.to_datetime(car["f"]).isin(pd.DatetimeIndex(fechas))], n], ignore_index=True)
         hechos = pd.concat([hechos[~pd.to_datetime(hechos["f"]).isin(pd.DatetimeIndex(fechas))],
                             nec[nec["f"].isin(pd.DatetimeIndex(fechas))]], ignore_index=True)
+        car = _compacto(car); hechos = hechos.drop_duplicates()
         _guardar(car, "cartera"); _guardar(hechos, "cartera_pares")
         logging.info("Seguimiento PP: cartera %s fechas, %s filas nuevas (%.0f s)", len(fechas), f"{len(n):,}", reloj.time() - t0)
 
@@ -208,21 +240,26 @@ def extraer(cfg: dict, u: pd.DataFrame, meses: list[str], cts: dict, hoy: pd.Tim
     for f, creds in pedir.items():
         clave = str(f.date())
         ya = set(cen.loc[cen["corte"] == clave, "credito"])
-        faltan = sorted(creds - ya)
-        if not faltan or (clave in set(cen["corte"]) and f < hoy - pd.Timedelta(days=2)):
+        faltan = sorted(creds - ya)   # los ya pedidos sin dato quedan guardados con rodamiento vacío: no se repiten
+        if not faltan:
             continue
         cur.execute("CREATE TABLE #c (credito VARCHAR(30))")
         cur.executemany("INSERT INTO #c VALUES (?)", [(c,) for c in faltan])
         cur.execute(f"""SELECT RTRIM(c.dco_credito) credito, CAST(c.f_reporte AS DATE) f, RTRIM(c.dco_rodamiento) rodamiento
             FROM [CENDOC].[dbo].[th_cendoc_diario_regional] c
             WHERE c.pais = 'Nicaragua' AND c.f_reporte = '{clave}' AND RTRIM(c.dco_credito) IN (SELECT credito FROM #c)""")
-        x = _filas(cur); x["corte"] = clave; nuevas.append(x)
+        x = _filas(cur); x["corte"] = clave
+        sin = sorted(set(faltan) - set(x["credito"]))
+        if sin:   # pedidos y no encontrados en Cendoc: se guardan para no volver a pedirlos cada día
+            x = pd.concat([x, pd.DataFrame({"credito": sin, "f": f.date(), "rodamiento": None, "corte": clave})], ignore_index=True)
+        nuevas.append(x)
         cur.execute("DROP TABLE #c")
     if nuevas:
         cen = pd.concat([cen, *nuevas], ignore_index=True).drop_duplicates(["credito", "corte"], keep="last")
         _guardar(cen, "cendoc")
         logging.info("Seguimiento PP: Cendoc %s fechas (%.0f s)", len(nuevas), reloj.time() - t2)
     cn.close()
+    ges = ges[~ges["usuario"].astype(str).str.strip().str.lower().isin(USUARIOS_EXCLUIDOS)]
     return car, ges, cen, ult_car, fechas_cendoc
 
 
@@ -235,7 +272,8 @@ def _canal(acc: pd.Series, res: pd.Series) -> np.ndarray:
 
 
 def calcular(u: pd.DataFrame, car: pd.DataFrame, ges: pd.DataFrame, cen: pd.DataFrame, meses: list[str], cts: dict,
-             hoy: pd.Timestamp, ult_car: pd.Timestamp, fechas_cendoc: pd.DatetimeIndex) -> pd.DataFrame:
+             hoy: pd.Timestamp, ult_car: pd.Timestamp, fechas_cendoc: pd.DatetimeIndex, U: int = 1) -> pd.DataFrame:
+    """U = cuotas vencidas para estar "en mora" en esta medición: n para el nPD; 1 para la mora por cuota."""
     u = u.copy().reset_index()   # 'index' = fila de la base (para la descarga)
     # tipos uniformes para los cruces (texto como object, fechas en ns)
     u["credito"] = u["credito"].astype(object); u["D"] = pd.to_datetime(u["D"]).astype("datetime64[ns]")
@@ -313,7 +351,7 @@ def calcular(u: pd.DataFrame, car: pd.DataFrame, ges: pd.DataFrame, cen: pd.Data
         pre = f"{k[0]}_"
         out[pre + "incl"] = incl.astype(int)
         cvC = cv_al(out["credito"], C_car)
-        out[pre + "pd"] = np.where(incl, (cvC >= 1).astype(float), np.nan)
+        out[pre + "pd"] = np.where(incl, (cvC >= U).astype(float), np.nan)
         out[pre + "cv"] = np.where(incl, cvC, np.nan)
 
         def obs_cv(desp):
@@ -323,10 +361,10 @@ def calcular(u: pd.DataFrame, car: pd.DataFrame, ges: pd.DataFrame, cen: pd.Data
             v[(fechas > C_car) | ~incl.to_numpy()] = np.nan
             return v
         cv1, cv3, cv6 = obs_cv(1), obs_cv(3), obs_cv(6)
-        mora1 = cv1 >= 1
+        mora1 = cv1 >= U
         out[pre + "m1"] = np.where(np.isnan(cv1), np.nan, mora1.astype(float))
-        out[pre + "m5"] = np.where(np.isnan(cv6), np.nan, (cv6 >= 1).astype(float))
-        out[pre + "pago2"] = np.where(mora1 & ~np.isnan(cv3), (cv3 == 0).astype(float), np.nan)
+        out[pre + "m5"] = np.where(np.isnan(cv6), np.nan, (cv6 >= U).astype(float))
+        out[pre + "pago2"] = np.where(mora1 & ~np.isnan(cv3), (cv3 < U).astype(float), np.nan)
 
         Gk = G.merge(pd.DataFrame({"credito": out["credito"], "_C": C}), on="credito")
         Gk = Gk[Gk["d"] <= Gk["_C"]]
@@ -345,7 +383,10 @@ def calcular(u: pd.DataFrame, car: pd.DataFrame, ges: pd.DataFrame, cen: pd.Data
         Dm = Dm.merge(pd.DataFrame({"credito": out["credito"], "_CB": CB, "_C": C_car}), on="credito")
         Dm = Dm[Dm["b"] < Dm["_CB"]]
         Dm["cv"] = cv_en(Dm["credito"], BDAYS[np.minimum(Dm["b"].to_numpy(), len(BDAYS) - 1)], limite=Dm["_C"])
-        Dm = Dm[Dm["cv"] >= 1]
+        # primer día hábil de mora en que ya no está en mora (pagó): para el parámetro de intensidad de las que pagan
+        Dp = Dm[(Dm["cv"] < U) & (Dm["b"] > Dm["due_b"] + 1)]
+        dpago = (Dp.groupby("credito")["b"].min() - Dp.groupby("credito")["due_b"].first()).reindex(out["credito"]).to_numpy(dtype=float)
+        Dm = Dm[Dm["cv"] >= U]
         ng = gg.groupby(["credito", "b"]).size()
         Dm["ng"] = ng.reindex(pd.MultiIndex.from_arrays([Dm["credito"], Dm["b"]])).fillna(0).to_numpy()
         act = set()
@@ -366,6 +407,15 @@ def calcular(u: pd.DataFrame, car: pd.DataFrame, ges: pd.DataFrame, cen: pd.Data
         GM = gg[gg["relb"].between(1, VENT)]
         GM = GM[[(c, bb) in dias_m for c, bb in zip(GM["credito"], GM["b"])]]
         out[pre + "gm"] = np.where(mora1, cnt(GM), np.nan)
+        out[pre + "gmc"] = np.where(mora1, cnt(GM, "contacto"), np.nan)   # contactos en mora
+        out[pre + "gmr"] = np.where(mora1, cnt(GM, "rpc"), np.nan)        # RPC en mora
+        # gestiones de gestor antes de pagar (desde el día 1 de mora hasta el día anterior al pago)
+        out[pre + "dpago"] = np.where(mora1, dpago, np.nan)
+        lim = pd.Series(np.where(np.isnan(dpago), VENT + 1, dpago), index=out["credito"].to_numpy())
+        GP = gg[gg["relb"] >= 1].copy(); GP["_l"] = GP["credito"].map(lim); GP = GP[GP["relb"] < GP["_l"]]
+        out[pre + "gpp"] = np.where(mora1, cnt(GP), np.nan)
+        out[pre + "cpp"] = np.where(mora1, cnt(GP, "contacto"), np.nan)
+        out[pre + "rpp"] = np.where(mora1, cnt(GP, "rpc"), np.nan)
         con_dias = out["credito"].isin(set(Dm["credito"]))
         out[pre + "sing"] = np.where(mora1 & con_dias, (~out["credito"].isin(set(GM["credito"]))).astype(float), np.nan)
         # promesas hechas en mora y su cumplimiento (pago entre la gestión y la fecha prometida + 1 día hábil)
@@ -405,7 +455,7 @@ def calcular(u: pd.DataFrame, car: pd.DataFrame, ges: pd.DataFrame, cen: pd.Data
         out[pre + "r_gestor"] = np.where(dia1, regla(Gk["canal"].isin(["LLAMADA_CLIENTE", "LLAMADA_REFERENCIA", "WHATSAPP"]), 1), np.nan)
         cv5 = cv_en(out["credito"], out["D"] + pd.Timedelta(days=5), limite=C_car)
         cv5[(out["D"] + pd.Timedelta(days=5) > C).to_numpy()] = np.nan
-        out[pre + "r_ref"] = np.where(mora1 & (cv5 >= 1), regla(Gk["canal"] == "LLAMADA_REFERENCIA", 5), np.nan)
+        out[pre + "r_ref"] = np.where(mora1 & (cv5 >= U), regla(Gk["canal"] == "LLAMADA_REFERENCIA", 5), np.nan)
         q1 = out["D"].dt.day <= 15
         prod = out["producto_madre"]
         umbral = pd.Series(np.select([prod == "MOTO", (prod == "PYME") & q1, prod == "PYME", prod.isin(["PERS", "PENS"]) & q1,
@@ -413,7 +463,7 @@ def calcular(u: pd.DataFrame, car: pd.DataFrame, ges: pd.DataFrame, cen: pd.Data
         fu = out["D"] + pd.to_timedelta(umbral.fillna(0), unit="D")
         cvu = cv_en(out["credito"], fu, limite=C_car); cvu[(fu > C).to_numpy() | umbral.isna().to_numpy()] = np.nan
         saldo_c = car.assign(f=pd.to_datetime(car["f"])).sort_values("f").groupby("credito")["saldo"].last()
-        aplica = mora1 & (cvu >= 1) & (pd.to_numeric(out["credito"].map(saldo_c), errors="coerce").fillna(0) >= SALDO_VISITA)
+        aplica = mora1 & (cvu >= U) & (pd.to_numeric(out["credito"].map(saldo_c), errors="coerce").fillna(0) >= SALDO_VISITA)
         v = Gk[Gk["canal"].isin(["ENVIO_VISITA", "VISITA"])].merge(pd.DataFrame({"credito": out["credito"], "_u": umbral}), on="credito")
         out[pre + "r_vis"] = np.where(aplica, out["credito"].isin(set(v.loc[v["rel"] >= v["_u"], "credito"])).astype(float), np.nan)
 
@@ -441,6 +491,20 @@ def calcular(u: pd.DataFrame, car: pd.DataFrame, ges: pd.DataFrame, cen: pd.Data
             out[f"{pre}k_{ch}_p"] = marca(gc[gc["prom"]])
             out[f"{pre}k_{ch}_c"] = marca(gc[gc["_cump"]])
 
+        if k == "dia":
+            # Intensidad al corte de cada cuenta: gestiones de gestor desde el día siguiente al vencimiento
+            gi = gg[gg["relb"] >= 1]
+            out["i_gest"] = cnt(gi); out["i_con"] = cnt(gi, "contacto"); out["i_rpc"] = cnt(gi, "rpc")
+            out["i_gdv"] = cnt(gg[gg["relb"] == 0])
+            ug = gg[gg["relb"] >= -3].sort_values("fa").groupby("credito")["usuario"].last()
+            out["i_gestor"] = out["credito"].map(ug).fillna("SIN GESTIÓN").astype(str).str.strip().str.lower().to_numpy()
+            ultg = gg[gg["relb"] >= -3].groupby("credito")["b"].max().reindex(out["credito"]).to_numpy(dtype=float)
+            out["i_dias"] = np.maximum(CB - out["due_b"].to_numpy() - 1, 0)
+            out["i_dsg"] = np.where(np.isnan(ultg), out["i_dias"], np.maximum(CB - ultg - 1, 0))
+            pr = Gk[(Gk["promesa"] == 1) & Gk["fprom"].notna()].groupby("credito")["fprom"].max()
+            out["i_fprom"] = out["credito"].map(pr).to_numpy()
+            out["i_corte"] = C.to_numpy()
+
         # Cendoc: rodamiento a la fecha de corte
         disp = {m: fechas_cendoc[fechas_cendoc <= cts[m]["foto_" + k]] for m in meses}
         corte_cen = out["mes_cobro"].map({m: (str(d[-1].date()) if len(d) else None) for m, d in disp.items()})
@@ -449,17 +513,86 @@ def calcular(u: pd.DataFrame, car: pd.DataFrame, ges: pd.DataFrame, cen: pd.Data
     return out
 
 
+# ---------------------------------------------------------------- intensidad de gestión (cuentas sin gestión efectiva)
+def parametro_intensidad(t: pd.DataFrame, actual: str) -> dict:
+    """Parámetro con lo que recibieron las cuentas que cayeron en mora y pagaron con gestión (meses cerrados, al cierre).
+    Ritmo mínimo = gestiones por día hábil en mora que alcanzaron 3 de cada 4 de esas cuentas (percentil 25).
+    Contactos y RPC: con 2 o más contactos y RPC en los primeros 3 días el pago sube de 67% a 76-80% (análisis 19-nov-2026)."""
+    h = t[(t["mes_cobro"] < actual) & (t["c_m1"] == 1)]
+    pg = h[h["c_dpago"].notna() & (h["c_gpp"] > 0)]
+    P = {"ritmo_min": 0.5, "contactos_min": 2, "rpc_min": 1, "dias_min": 3, "n": int(len(pg)), "cuentas_mora": int(len(h))}
+    if len(pg) < 50:
+        return P
+    ritmo = pg["c_gpp"] / (pg["c_dpago"] - 1).clip(lower=1)
+    P.update({"ritmo_min": round(float(ritmo.quantile(0.25)), 1), "ritmo_mediana": round(float(ritmo.median()), 1),
+              "pagaron_pct": round(100 * float(h["c_dpago"].notna().mean()), 1),
+              "med_dia_pago": float(pg["c_dpago"].median()), "med_gest": float(pg["c_gpp"].median()),
+              "med_contactos": float(pg["c_cpp"].median()), "med_rpc": float(pg["c_rpp"].median()),
+              "p75_gest": float(pg["c_gpp"].quantile(0.75)), "p75_contactos": float(pg["c_cpp"].quantile(0.75)),
+              "p75_rpc": float(pg["c_rpp"].quantile(0.75))})
+    return P
+
+
+def intensidad(t: pd.DataFrame, actual: str, P: dict) -> pd.DataFrame:
+    """Cuentas del mes en curso en mora al corte: gestión efectiva o insuficiente según el parámetro, con el motivo."""
+    x = t[(t["mes_cobro"] == actual) & (t["d_pd"] == 1)].copy()
+    vig = (pd.to_datetime(x["i_fprom"]) >= pd.to_datetime(x["i_corte"])).to_numpy()
+    dias = x["i_dias"].astype(float).to_numpy()
+    ritmo = x["i_gest"].to_numpy() / np.maximum(dias, 1)
+    mot = []
+    for g, r, rp, co, d, ds, v, fp in zip(x["i_gest"], ritmo, x["i_rpc"], x["i_con"], dias, x["i_dsg"], vig, x["i_fprom"]):
+        m = []
+        if g == 0 and not v:
+            m.append("Sin gestión de gestor desde que cayó en mora" + (" (promesa rota)" if pd.notna(fp) else ""))
+        elif g > 0 and d >= 1 and r < P["ritmo_min"] and not v:   # con promesa vigente no se espera insistir
+            m.append(f"Ritmo bajo ({r:.1f} gestiones por día; mínimo {P['ritmo_min']:.1f})")
+        if d >= P["dias_min"] and rp < P["rpc_min"]:
+            m.append("Sin contacto con el titular")
+        if d >= P["dias_min"] and co < P["contactos_min"] and not v:
+            m.append(f"Menos de {P['contactos_min']} contactos")
+        if ds >= 2 and not v:
+            m.append(f"{int(ds)} días hábiles sin gestión y sin promesa vigente")
+        mot.append("; ".join(m))
+    x["int_motivo"] = mot
+    x["int_estado"] = np.where(x["int_motivo"] == "", "Gestión efectiva", "Gestión insuficiente")
+    x["int_prioridad"] = np.select([(x["i_gest"].to_numpy() == 0) & ~vig, (x["i_rpc"].to_numpy() == 0) & (dias >= P["dias_min"]),
+                                    x["int_motivo"].to_numpy() != ""], ["1 Alta", "2 Media", "3 Baja"], "")
+    x["int_prom_vig"] = np.where(vig, "Sí", "No")
+    x["int_fprom"] = pd.to_datetime(x["i_fprom"]).dt.strftime("%Y-%m-%d")
+    x["int_ritmo"] = np.round(ritmo, 2)
+    x = x.rename(columns={"i_gestor": "int_gestor", "i_gest": "int_gest", "i_con": "int_con", "i_rpc": "int_rpc", "i_gdv": "int_gdv", "i_dias": "int_dias",
+                          "i_dsg": "int_dsg"})
+    return x[["credito", "int_estado", "int_prioridad", "int_gestor", "int_motivo", "int_dias", "int_gest", "int_gdv", "int_con", "int_rpc",
+              "int_ritmo", "int_dsg", "int_prom_vig", "int_fprom"]]
+
+
 def generar(cfg: dict, b: pd.DataFrame, hoy) -> dict:
-    """Arma el archivo de la pestaña: una fila por crédito 1PD con sus indicadores a la misma fecha y al cierre."""
+    """Tablas por cuota (1 a 6): "pd" = nPD (debe n cuotas) y "mc" = mora por cuota (no pagó la cuota n; desde la 2);
+    una fila por cuota con sus indicadores a la misma fecha y al cierre. Además, la intensidad de gestión de las cuentas
+    del mes en curso en 1PD (pestaña Primeros Pagos)."""
     hoy = pd.Timestamp(hoy).normalize()
     t0 = reloj.time()
-    u, meses = universo(b, hoy)
+    us = {}
+    for n in PDS:
+        us[n], meses = universo(b, hoy, n)
     cts = cortes(meses, hoy)
-    car, ges, cen, ult_car, fechas_cendoc = extraer(cfg, u, meses, cts, hoy)
-    out = calcular(u, car, ges, cen, meses, cts, hoy, ult_car, fechas_cendoc)
-    logging.info("Seguimiento PP: %s cuotas 1PD en %s meses (%.0f s)", f"{len(out):,}", len(meses), reloj.time() - t0)
+    car, ges, cen, ult_car, fechas_cendoc = extraer(cfg, pd.concat(us.values()), meses, cts, hoy)
+    tablas = {}
+    for n, u in us.items():
+        for tipo, U in (("pd", n), ("mc", 1)):
+            if tipo == "mc" and n == 1:
+                continue   # la mora de la cuota 1 es el 1PD
+            t1 = reloj.time()
+            tablas[(tipo, n)] = calcular(u, car, ges, cen, meses, cts, hoy, ult_car, fechas_cendoc, U=U)
+            logging.info("Seguimiento PP: %s cuotas %s%s (%.0f s)", f"{len(tablas[(tipo, n)]):,}", n,
+                         "PD" if tipo == "pd" else " mora por cuota", reloj.time() - t1)
+    P = parametro_intensidad(tablas[("pd", 1)], meses[-1])
+    inten = intensidad(tablas[("pd", 1)], meses[-1], P)
+    logging.info("Seguimiento PP: listo en %.0f s; intensidad: %s de %s cuentas en 1PD con gestión insuficiente",
+                 reloj.time() - t0, int((inten["int_estado"] == "Gestión insuficiente").sum()), len(inten))
     meta = {"meses": meses, "hoy": str(hoy.date()), "foto_mccollect": str(ult_car.date()),
             "fotos": {m: {k: str(cts[m]["foto_" + k].date()) for k in ("dia", "cierre")} for m in meses},
             "foto_cendoc": str(fechas_cendoc[-1].date()) if len(fechas_cendoc) else None,
-            "cortes": {m: {k: str(c[k].date()) for k in ("dia", "cierre")} for m, c in cts.items()}}
-    return {"tabla": out, "meta": meta}
+            "cortes": {m: {k: str(c[k].date()) for k in ("dia", "cierre")} for m, c in cts.items()},
+            "intensidad": P}
+    return {"tablas": tablas, "meta": meta, "intensidad": inten, "param": P}

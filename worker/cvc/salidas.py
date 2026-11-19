@@ -59,7 +59,12 @@ def _med(df: pd.DataFrame) -> list[str]:
     return [c for c in MEDIDAS if c in df]
 
 
-def pestañas(b: pd.DataFrame, g: pd.DataFrame, hoy: date) -> dict[str, dict]:
+INTENSIDAD = ["int_estado", "int_prioridad", "int_gestor", "int_motivo", "int_prom_vig", "int_fprom"]
+INTENSIDAD_MED = ["int_dias", "int_gest", "int_gdv", "int_con", "int_rpc", "int_ritmo", "int_dsg"]
+
+
+def pestañas(b: pd.DataFrame, g: pd.DataFrame, hoy: date, inten: pd.DataFrame | None = None,
+             param: dict | None = None) -> dict[str, dict]:
     b = b.copy()
     b["plazo"] = b["numero_cuotas"].map(lambda v: None if pd.isna(v) else f"{int(v)} cuotas")
     b["dia_pago"] = b["dias_pago"].map(lambda v: None if pd.isna(v) else str(int(v)))
@@ -75,6 +80,14 @@ def pestañas(b: pd.DataFrame, g: pd.DataFrame, hoy: date) -> dict[str, dict]:
         pp[c] = pp[c] if c in pp else None
     if "recaudo_total" not in pp:
         pp["recaudo_total"] = np.nan
+    # Intensidad de gestión de las cuentas en 1PD (la calcula el seguimiento con el cono histórico)
+    if inten is not None and len(inten):
+        pp = pp.merge(inten, on="credito", how="left").set_axis(pp.index)
+    for c in INTENSIDAD + INTENSIDAD_MED:
+        if c not in pp:
+            pp[c] = np.nan
+    pp["int_estado"] = np.where(pp["producto_madre"].eq("CONV") & pp["int_estado"].isna() & pp["estado_primer_pago"].eq("En mora"),
+                                "No aplica (Convenio)", pp["int_estado"])
 
     # Cono: gestiones del mes (todas, aunque el crédito no sea de la cosecha) y promesas
     g = g.copy()
@@ -89,8 +102,9 @@ def pestañas(b: pd.DataFrame, g: pd.DataFrame, hoy: date) -> dict[str, dict]:
         # "fila" = número de fila en la base completa: la descarga filtrada toma esas filas de descargas/base.json.gz
         "cosecha": _columnar(b, DIMS, _med(b), {"fila": [int(i) for i in b.index]}),
         "cartera_activa": _columnar(activa, DIMS, _med(activa), {"fila": [int(i) for i in activa.index]}),
-        "primeros_pagos": _columnar(pp, DIMS + ["primera_cuota"] + REGLAS_FPD + PP_DETALLE, _med(pp) + ["dias_mora_fpd", "recaudo_total"],
-                                    {"fila": [int(i) for i in pp.index]}),
+        "primeros_pagos": _columnar(pp, DIMS + ["primera_cuota"] + REGLAS_FPD + PP_DETALLE + INTENSIDAD,
+                                    _med(pp) + ["dias_mora_fpd", "recaudo_total"] + INTENSIDAD_MED,
+                                    {"fila": [int(i) for i in pp.index], "intensidad_param": param or {}}),
         "cono": {
             "gestiones": _agrupar(g, ["dia", "usuario", "descripcion_accion", "descripcion_resultado", "tipo_cartera",
                                       "de_la_cosecha"], ["gestionada", "contacto", "rpc", "promesa"]),
@@ -307,10 +321,47 @@ def excel(b: pd.DataFrame) -> bytes:
     return buf.getvalue()
 
 
-def seguimiento(seg: dict) -> dict:
-    """Pestaña Primeros Pagos – Seguimiento: una fila por cuota 1PD con sus indicadores a la misma fecha (d_) y al cierre (c_)."""
+AUX_SEG = ("d_dpago", "c_dpago", "d_gpp", "c_gpp", "d_cpp", "c_cpp", "d_rpp", "c_rpp")
+
+
+def seguimientos(seg: dict) -> dict[str, dict]:
+    """Archivos de la herramienta de primeros pagos: pp_seg_<n> (nPD), pp_mc_<n> (mora por cuota) y pp_pds (PD's por cosecha)."""
+    out = {}
+    for (tipo, n), t in seg["tablas"].items():
+        meta = {**seg["meta"], "tipo": tipo, "n": n}
+        out[f"pp_{'seg' if tipo == 'pd' else 'mc'}_{n}"] = seguimiento({"tabla": t, "meta": meta})
+    out["pp_pds"] = pds_por_cosecha(seg)
+    return out
+
+
+def pds_por_cosecha(seg: dict) -> dict:
+    """Una fila por crédito con su marca 1PD a 6PD (al cierre y a la misma fecha): la tabla de PD's por cosecha con filtros."""
     from .pp_seguimiento import DIMS as DIMS_SEG
-    t = seg["tabla"]
+    tablas = {n: t for (tipo, n), t in seg["tablas"].items() if tipo == "pd"}
+    dims = ["mes_desembolso"] + [c for c in DIMS_SEG if c in tablas[1] and c != "mes_desembolso"]
+    base = pd.concat([t[["index", "credito", "w"] + dims] for t in tablas.values()]).drop_duplicates("index").set_index("index")
+    for n, t in tablas.items():
+        x = t.set_index("index")
+        for k in ("c", "d"):
+            base[f"{k}{n}_i"] = x[f"{k}_incl"].reindex(base.index)
+            base[f"{k}{n}_p"] = x[f"{k}_pd"].reindex(base.index)
+        base[f"m{n}"] = x["mes_cobro"].reindex(base.index)
+    base = base.reset_index()
+    for c in dims:
+        base[c] = base[c].astype("object").where(base[c].notna(), "SIN DATO")
+    if "dia_pago" in base:
+        base["dia_pago"] = base["dia_pago"].map(lambda v: v if v == "SIN DATO" else str(int(float(v))))
+    meds = ["w"] + [c for c in base.columns if c[:1] in ("c", "d") and c[1:2].isdigit()]
+    return _columnar(base, dims + [f"m{n}" for n in tablas], meds,
+                     {"fila": [int(i) for i in base["index"]], "meta": seg["meta"]})
+
+
+def seguimiento(seg: dict) -> dict:
+    """Una fila por cuota con sus indicadores a la misma fecha (d_) y al cierre (c_)."""
+    from .pp_seguimiento import DIMS as DIMS_SEG
+    t = seg["tabla"].drop(columns=[c for c in seg["tabla"].columns if c.startswith("i_") or c in AUX_SEG])
+    if seg["meta"].get("n", 1) > 1 or seg["meta"].get("tipo") == "mc":   # las reglas FPD son solo de la primera cuota
+        t = t.drop(columns=[c for c in t.columns if c[2:4] == "r_"])
     dims = ["mes_cobro", "dia_vence", "credito"] + [c for c in DIMS_SEG if c in t] + ["d_rod", "c_rod"]
     for c in dims:
         if c not in ("d_rod", "c_rod"):

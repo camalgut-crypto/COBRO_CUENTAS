@@ -38,13 +38,17 @@ def procesar(datos: dict, info: dict, hoy: date, cfg: dict | None = None) -> dic
         "conteos": {"cosecha": len(b), "cartera_activa": int(b["en_cartera"].sum()),
                     "primeros_pagos": int(b["primer_pago_mes"].sum()), "gestiones": len(g)},
     }
-    res = {"meta": meta, "pestanas": salidas.pestañas(b, g, hoy), "ia": salidas.resumen_ia(b, g, hoy), "base": b}
-    if cfg:   # Primeros Pagos – Seguimiento (historial de 13 meses desde SQL); si falla, la carga sigue sin esa pestaña
+    seg = None
+    if cfg:   # Seguimiento 1PD a 6PD (historial de 13 meses desde SQL); si falla, la carga sigue sin esas pestañas
         try:
             from cvc import pp_seguimiento
-            res["pestanas"]["primeros_pagos"]["seguimiento"] = salidas.seguimiento(pp_seguimiento.generar(cfg["servidor"], b, hoy))
+            seg = pp_seguimiento.generar(cfg["servidor"], b, hoy)
         except Exception:
             logging.exception("Seguimiento de Primeros Pagos: no se pudo generar; la carga sigue sin él")
+    res = {"meta": meta, "pestanas": salidas.pestañas(b, g, hoy, seg and seg["intensidad"], seg and seg["param"]),
+           "ia": salidas.resumen_ia(b, g, hoy), "base": b}
+    if seg:
+        res["pestanas"].update(salidas.seguimientos(seg))
     logging.info("Base: %s créditos, %s gestiones (%.0f s)", f"{len(b):,}", f"{len(g):,}", reloj.time() - t0)
     return res
 
@@ -154,7 +158,7 @@ def main():
         guardar_local(procesar(datos, info, hoy))
     elif a.local:
         datos, info = fuentes.obtener(cfg, forzar, hoy)
-        guardar_local(procesar(datos, info, hoy))
+        guardar_local(procesar(datos, info, hoy, cfg))
     elif a.una_vez:
         from cvc.nube import Supabase
         actualizar_nube(cfg, Supabase(cfg["supabase"]), forzar=forzar)

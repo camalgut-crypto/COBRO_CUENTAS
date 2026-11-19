@@ -8,13 +8,13 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=2026111802">
+  <link rel="stylesheet" href="styles.css?v=2026111902">
 </head>
 <body>
   <div id="login" class="login" hidden>
     <div class="lado">
       <img class="logo" src="img/logo_claro.png" alt="Instacredit">
-      <div><h1>Cosechas <span>vs Cobro</span></h1><p>Originación y cobranza · Nicaragua<br>Cosecha, cartera activa, primeros pagos y cono de cobranza</p></div>
+      <div><h1 id="titLogin">Cosechas <span>vs Cobro</span></h1><p id="subLogin">Originación y cobranza · Nicaragua<br>Cosecha, cartera activa, primeros pagos y cono de cobranza</p></div>
       <img class="mascota" src="img/prestamito_leyendo.png" alt="">
     </div>
     <form id="flog">
@@ -38,7 +38,7 @@
   <div id="app" hidden>
     <header class="top">
       <img src="img/logo_claro.png" alt="Instacredit">
-      <div class="tit">Cosechas <span>vs Cobro</span></div>
+      <div class="tit" id="titApp">Cosechas <span>vs Cobro</span></div>
       <div class="acciones">
         <span id="ultima" class="small"></span>
         <button id="btnActualizar" class="btn sec">Actualizar</button>
@@ -98,8 +98,9 @@
           <ul class="small muted perfiles">
             <li><b>Administrador:</b> todas las pestañas con tablas, descarga, preguntas y usuarios.</li>
             <li><b>Gerencia:</b> todas las pestañas, solo gráficos; puede descargar la data.</li>
-            <li><b>Cobro:</b> Primeros Pagos y Cartera Activa; puede descargar la data.</li>
-            <li><b>Comercial:</b> Primeros Pagos.</li>
+            <li><b>Cobro:</b> Primeros Pagos y Cartera Activa (en la herramienta de PD's: seguimiento, mora por cuota y cosecha); puede descargar la data.</li>
+            <li><b>Comercial:</b> Primeros Pagos (en la herramienta de PD's: seguimiento, mora por cuota y cosecha).</li>
+            <li class="nota-u">Los usuarios y perfiles son los mismos en Cosechas vs Cobro y en PD's, Cosecha y Cono de Cobro.</li>
           </ul>
         </div>
         <div class="tabla-caja">
@@ -129,7 +130,7 @@
   <div id="tip" class="tip" hidden></div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.99.3/dist/umd/supabase.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-  <script src="config.js?v=2026111402"></script>
-  <script src="app.js?v=2026111901"></script>
+  <script src="config.js?v=2026111902"></script>
+  <script src="app.js?v=2026111902"></script>
 </body>
 </html>

@@ -29,7 +29,8 @@ language sql stable security definer set search_path = public as $$
   select coalesce(public.cvc_rol() = 'admin', false)
 $$;
 
--- Qué pestañas ve cada perfil (la app y la función de preguntas usan esta misma regla)
+-- Qué archivos (pestañas) ve cada perfil (la app y la función de preguntas usan esta misma regla).
+-- Herramienta de PD's (19-nov-2026): pp_seg_1..6 = 1PD a 6PD, pp_mc_2..6 = mora por cuota, pp_pds = PD's por cosecha.
 create or replace function public.cvc_pestanas(p_rol text) returns text[]
 language sql immutable as $$
   select case p_rol
@@ -38,6 +39,10 @@ language sql immutable as $$
     when 'cobro'     then array['cartera_activa','primeros_pagos']
     when 'comercial' then array['primeros_pagos']
     else array[]::text[] end
+  || case when p_rol in ('admin','gerencia','cobro','comercial') then
+       array['pp_seg_1','pp_seg_2','pp_seg_3','pp_seg_4','pp_seg_5','pp_seg_6',
+             'pp_mc_2','pp_mc_3','pp_mc_4','pp_mc_5','pp_mc_6','pp_pds']
+     else array[]::text[] end
 $$;
 
 -- Administrador inicial (tomado de Tiempos DAC: entra con la misma contraseña)

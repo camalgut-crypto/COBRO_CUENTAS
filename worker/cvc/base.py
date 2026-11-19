@@ -129,6 +129,7 @@ def producto_comercial(mod: pd.Series, prod: pd.Series, salario: pd.Series, sald
 
 # ---------- gestiones ----------
 CLAVE_GESTION = ["credito", "fecha_actividad", "codigo_accion", "codigo_resultado", "usuario"]
+USUARIOS_EXCLUIDOS = {"jjreyesu"}   # gestiones del área comercial, no de cobro: fuera del cono (19-nov-2026)
 
 
 def depurar_gestiones(g: pd.DataFrame, tipo_cartera_credito: pd.Series) -> pd.DataFrame:
@@ -202,7 +203,10 @@ def construir(d: dict[str, pd.DataFrame], hoy: date | None = None) -> tuple[pd.D
 
     # Gestiones del mes (depuradas) y su resumen por crédito
     g = depurar_gestiones(d["gestiones"], tipo_cartera_credito)
-    avisos.append(f"Gestiones: {len(d['gestiones']):,} filas del query → {len(g):,} gestiones únicas")
+    excl = g["usuario"].fillna("").str.strip().str.lower().isin(USUARIOS_EXCLUIDOS)
+    g = g[~excl]
+    avisos.append(f"Gestiones: {len(d['gestiones']):,} filas del query → {len(g):,} gestiones únicas"
+                  + (f" ({int(excl.sum())} del área comercial excluidas)" if excl.any() else ""))
     ges = resumen_gestiones(g)
 
     # Cendoc

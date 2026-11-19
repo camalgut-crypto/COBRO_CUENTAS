@@ -11,14 +11,28 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
 const DOMINIO = '@tiemposdac.local';
 const CLAVE_INICIAL = '12345678';
 const ROLES = { admin: 'Administrador', gerencia: 'Gerencia', cobro: 'Cobro', comercial: 'Comercial' };
+// Dos herramientas con el mismo código y los mismos usuarios (config.js → HERRAMIENTA):
+//   cuentas = COBRO_CUENTAS (cosecha, cartera, primeros pagos)  ·  pds = PDS_COSECHA_CONO_COBRO (1PD a 6PD)
+const HERR = ((LOCAL && QS.get('h')) || CFG.HERRAMIENTA) === 'pds' ? 'pds' : 'cuentas';   // vista local: ?local&h=pds
+const MARCA = {
+  cuentas: { nombre: 'Cosechas vs Cobro', tit: 'Cosechas <span>vs Cobro</span>',
+    sub: 'Originación y cobranza · Nicaragua<br>Cosecha, cartera activa, primeros pagos y cono de cobranza' },
+  pds: { nombre: "PD's, Cosecha y Cono de Cobro", tit: "PD's <span>· Cosecha y Cobro</span>",
+    sub: 'Primeros pagos · Nicaragua<br>Seguimiento 1PD a 6PD, mora por cuota, cosechas y cono de cobranza' },
+}[HERR];
+const TODOS = ['admin', 'gerencia', 'cobro', 'comercial'];
 const PESTANAS = [
-  { id: 'cosecha', t: 'Cosecha', roles: ['admin', 'gerencia'] },
-  { id: 'cartera_activa', t: 'Cartera Activa', roles: ['admin', 'gerencia', 'cobro'] },
-  { id: 'primeros_pagos', t: 'Primeros Pagos', roles: ['admin', 'gerencia', 'cobro', 'comercial'] },
-  { id: 'pp_seguimiento', t: 'Primeros Pagos – Seguimiento', roles: ['admin', 'gerencia', 'cobro', 'comercial'] },
-  { id: 'pp_cosecha', t: 'Primeros Pagos – Cosecha', roles: ['admin', 'gerencia', 'cobro', 'comercial'] },
-  { id: 'cono', t: 'Cono de cobranza', roles: ['admin', 'gerencia'] },
+  { id: 'cosecha', t: 'Cosecha', roles: ['admin', 'gerencia'], h: ['cuentas'] },
+  { id: 'cartera_activa', t: 'Cartera Activa', roles: ['admin', 'gerencia', 'cobro'], h: ['cuentas'] },
+  { id: 'primeros_pagos', t: 'Primeros Pagos', roles: TODOS, h: ['cuentas'] },
+  { id: 'pp_seguimiento', t: 'Primeros Pagos – Seguimiento', roles: TODOS, h: ['pds'] },
+  { id: 'pp_mora_cuota', t: 'Mora por cuota', roles: TODOS, h: ['pds'] },
+  { id: 'pp_cosecha', t: 'Primeros Pagos – Cosecha', roles: TODOS, h: ['pds'] },
+  { id: 'cono', t: 'Cono de cobranza', roles: ['admin', 'gerencia'], h: ['cuentas', 'pds'] },
 ];
+const misPestanas = () => PESTANAS.filter(p => p.h.includes(HERR) && p.roles.includes(rol()));
+const PP_TABS = ['pp_seguimiento', 'pp_mora_cuota', 'pp_cosecha'];
+document.title = MARCA.nombre;
 const slug = s => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
   .trim().replace(/[^a-z0-9]+/g, '.').replace(/^\.|\.$/g, '');
 
@@ -45,6 +59,7 @@ const DIM = {
   rodamiento: 'Rodamiento', tipo_cartera: 'Tipo cartera del cono', tipo_pago: 'Tipo de pago', pago_mes: 'Pago en el mes',
   estado_promesa: 'Estado de promesa', ult_resultado: 'Último resultado de gestión', gestor: 'Gestor',
   estado_primer_pago: 'Estado del primer pago', tipo_credito_legal: 'Tipo Cartera',
+  int_estado: 'Intensidad de gestión', int_prioridad: 'Prioridad de gestión', int_gestor: 'Gestor de cobro',
   producto_madre: 'Producto Madre', resultado_motor: 'Resultado motor', status_promesa_pago: 'Status promesa',
   dealer_genesis: 'Dealer', suc_dealer: 'Sucursal dealer', con_excepcion: 'Con Excepcion', con_prima: 'Con Prima',
   dia_pago: 'Día de pago', tipo_salario: 'Tipo salario', primera_cuota: 'Primera cuota',
@@ -68,8 +83,8 @@ const DIMS_VER_POR = ['sucursal', 'canal', 'producto_madre', 'producto_comercial
   'suc_dealer', 'con_excepcion', 'con_prima', 'dia_pago', 'mes_desembolso', 'empleo_inss'];
 const CONO_DIMS = { tipo_cartera: 'Tipo de cartera', usuario: 'Gestor', descripcion_accion: 'Acción', descripcion_resultado: 'Resultado', de_la_cosecha: 'Crédito de la cosecha' };
 
-const S = { perfil: null, tab: null, datos: {}, meta: null, f: {}, cono: {}, verPor: {}, tablaPor: {}, charts: {}, mas: false,
-  cerrados: {}, pivMed: 'spag', abierto: null, busca: '' };
+const S = { perfil: null, tab: null, datos: {}, arch: {}, meta: null, f: {}, cono: {}, verPor: {}, tablaPor: {}, charts: {}, mas: false,
+  cerrados: {}, pivMed: 'spag', abierto: null, busca: '', seg: { k: 'd', by: 'w', mes: null, pd: 1 }, mc: 2 };
 
 // ---------- Formatos ----------
 const nf = new Intl.NumberFormat('es-NI', { maximumFractionDigits: 0 });
@@ -104,7 +119,7 @@ $('flog').addEventListener('submit', async e => {
   try {
     ok(await sb.auth.signInWithPassword({ email: slug($('lu').value) + DOMINIO, password: clave }));
     const p = await perfilActual();
-    if (!p || !p.activo) { await sb.auth.signOut(); return mostrarLogin('Usuario sin acceso a Cosechas vs Cobro'); }
+    if (!p || !p.activo) { await sb.auth.signOut(); return mostrarLogin(`Usuario sin acceso a ${MARCA.nombre}`); }
     S.perfil = p; $('lp').value = '';
   } catch { return mostrarLogin('Usuario o contraseña incorrectos'); }
   if (clave === CLAVE_INICIAL) {
@@ -128,13 +143,15 @@ const rol = () => S.perfil?.rol;
 const puedeDescargar = () => ['admin', 'gerencia', 'cobro'].includes(rol());
 const veTablas = () => rol() !== 'gerencia';   // gerencia: solo gráficos
 
+$('titApp').innerHTML = MARCA.tit; $('titLogin').innerHTML = MARCA.tit; $('subLogin').innerHTML = MARCA.sub;
+
 async function iniciar() {
   $('login').hidden = true; $('app').hidden = false;
   $('yoNombre').textContent = S.perfil.nombre;
   $('yoRol').textContent = ROLES[rol()] || '';
   $('btnClave').hidden = $('btnSalir').hidden = LOCAL;
   $('btnDescargar').hidden = !puedeDescargar();
-  const mias = PESTANAS.filter(p => p.roles.includes(rol()));
+  const mias = misPestanas();
   $('tabs').innerHTML = mias.map(p => `<button data-tab="${p.id}">${p.t}</button>`).join('')
     + (rol() === 'admin' ? '<button data-tab="admin">Administración</button>' : '');
   sugerencias();
@@ -153,22 +170,25 @@ async function leerMeta() {
   $('ultima').textContent = u ? `Actualizado ${new Date(u).toLocaleString('es-NI', { dateStyle: 'medium', timeStyle: 'short' })}` : 'Sin datos aún';
 }
 
-async function bajar(tab) {
-  if (S.datos[tab]) return S.datos[tab];
-  if (tab === 'pp_seguimiento' || tab === 'pp_cosecha') {   // viajan dentro del archivo de Primeros Pagos (mismos permisos)
-    const p = await bajar('primeros_pagos');
-    if (!p.seguimiento) throw new Error('el seguimiento todavía no se ha generado; se incluye en la próxima actualización');
-    return (S.datos[tab] = p.seguimiento);   // las dos pestañas comparten los mismos datos
-  }
+// Un archivo por pestaña; las de primeros pagos tienen uno por PD (pp_seg_1 … pp_seg_6) y por cuota (pp_mc_2 … pp_mc_6)
+async function bajarArchivo(nombre) {
+  if (S.arch[nombre]) return S.arch[nombre];
   let d;
-  if (LOCAL) d = await (await fetch(`local/${tab}.json`, { cache: 'no-store' })).json();
-  else {
-    const blob = ok(await sb.storage.from(CFG.BUCKET).download(`pestanas/${tab}.json.gz`));
-    const txt = await new Response(blob.stream().pipeThrough(new DecompressionStream('gzip'))).text();
-    d = JSON.parse(txt);
+  if (LOCAL) {
+    const r = await fetch(`local/${nombre}.json`, { cache: 'no-store' });
+    if (!r.ok) throw new Error('todavía no se ha generado; se incluye en la próxima actualización');
+    d = await r.json();
+  } else {
+    const blob = ok(await sb.storage.from(CFG.BUCKET).download(`pestanas/${nombre}.json.gz`));
+    d = JSON.parse(await new Response(blob.stream().pipeThrough(new DecompressionStream('gzip'))).text());
   }
-  S.datos[tab] = d;
-  return d;
+  return (S.arch[nombre] = d);
+}
+const archivoDe = tab => (tab === 'pp_seguimiento' || tab === 'pp_cosecha' ? `pp_seg_${S.seg.pd}` : tab === 'pp_mora_cuota' ? `pp_mc_${S.mc}` : tab);
+async function bajar(tab) {
+  const d = await bajarArchivo(archivoDe(tab));
+  if (tab === 'pp_cosecha') d.pds = await bajarArchivo('pp_pds');
+  return (S.datos[tab] = d);
 }
 
 // Valor de una fila: dimensión → texto del diccionario; medida → número
@@ -675,6 +695,7 @@ function pintarPrimeros(D) {
     tarjeta('gPPDia', 'Primeros pagos por fecha de vencimiento', 'Créditos según el día en que vence su primera cuota y cómo están hoy.', { ancho: true, leyenda: PP_ESTADOS.map(e => [e[0], e[2]]) })
     + tarjeta('gPPDim', '% en mora sobre los vencidos (saldo pagaré)', 'Saldo pagaré en mora ÷ saldo pagaré de las primeras cuotas ya vencidas. Los 15 grupos con más saldo vencido (mínimo 5 cuentas).', { ancho: true, alto: true, verPor: { id: 'pp_dim', D, valor: vp } })
     + (veTablas() && D.dic.nombre_deudor ? `<article class="graf ancho"><div class="cab"><h3>Detalle de las cuentas en mora</h3><span class="small muted" id="ppMoraNota"></span></div><div class="tabla-caja" id="ppMora"></div></article>` : '')
+    + (D.dic.int_estado ? `<article class="graf ancho"><div class="cab"><h3>Cuentas sin gestión efectiva de cobro</h3><label class="small">Ver por <select data-verpor="pp_int">${['promotor', 'int_gestor', ...DIMS_VER_POR.filter(d => d !== 'promotor')].filter(d => D.dic[d]).map(d => `<option value="${d}"${d === (S.verPor.pp_int || 'promotor') ? ' selected' : ''}>${DIM[d]}</option>`).join('')}</select></label></div><p class="nota" id="ppIntNota"></p><div class="tabla-caja" id="ppInt"></div>${veTablas() ? '<h3 class="subtit">Detalle de las cuentas con gestión insuficiente</h3><div class="tabla-caja" id="ppIntLista"></div>' : ''}</article>` : '')
     + (D.dic.rg_gestor ? tarjeta('gPPReglas', 'Cumplimiento de las reglas de cobro FPD', 'Créditos FPD que no pagaron a tiempo, según las gestiones registradas en el cono (MCCollect). Clic en «No cumple» para filtrar y descargar la lista.', { ancho: true, leyenda: [['Cumple', SERIE[0]], ['No cumple', SERIE[2]]] }) : '');
   const porDia = agrupar(D, idx, 'primera_cuota', n0, sm);
   // Todos los días del mes en el eje: un día sin barra es un día sin primeras cuotas (no un dato perdido)
@@ -700,6 +721,7 @@ function pintarPrimeros(D) {
   });
   if (D.dic.rg_gestor) reglasFPD(D, idx);
   if (veTablas() && D.dic.nombre_deudor) detalleMoraPP(D, idx);
+  if (D.dic.int_estado) intensidadPP(D, idx);
   const tp = S.verPor.tabla_primeros_pagos || 'promotor';
   tabla('Detalle de primeros pagos', DIMS_VER_POR.filter(d => D.dic[d]).map(d => [d, DIM[d]]), tp, [
     { t: 'Créditos', v: a => a.n, f: fN }, { t: 'Vencidos', v: a => a.venc, f: fN }, { t: 'Pagaron', v: a => a.pago, f: fN },
@@ -708,6 +730,38 @@ function pintarPrimeros(D) {
   ], agrupar(D, idx, tp, n0, sm), tot);
 }
 
+
+// Cuentas en 1PD cuya gestión no alcanza el mínimo que tuvieron las cuentas que pagaron por gestión de cobro
+function intensidadPP(D, idx) {
+  const P = D.intensidad_param || {}, vp = S.verPor.pp_int || 'promotor';
+  const evaluadas = idx.filter(i => ['Gestión efectiva', 'Gestión insuficiente'].includes(dv(D, 'int_estado', i)));
+  const tiene = (i, t) => (dv(D, 'int_motivo', i) || '').includes(t);
+  const nuevo = () => ({ n: 0, ef: 0, ins: 0, s: 0, sIns: 0, sinG: 0, sinT: 0, ritmo: 0, dias: 0 });
+  const suma = (a, i) => {
+    const w = mv(D, 'saldopagare', i), ins = dv(D, 'int_estado', i) === 'Gestión insuficiente';
+    a.n++; a.s += w; if (ins) { a.ins++; a.sIns += w; } else a.ef++;
+    if (tiene(i, 'Sin gestión')) a.sinG++; if (tiene(i, 'Sin contacto')) a.sinT++; if (tiene(i, 'Ritmo bajo')) a.ritmo++; if (tiene(i, 'días hábiles sin gestión')) a.dias++;
+  };
+  const tot = nuevo(); evaluadas.forEach(i => suma(tot, i));
+  const g = agrupar(D, evaluadas, vp, nuevo, suma);
+  const n1 = v => (v == null ? '—' : fDec(v, 1));
+  $('ppIntNota').innerHTML = `Cuentas en 1PD al corte (sin Convenio). <b>Parámetro</b>: de las cuentas que cayeron en 1PD en los 12 meses anteriores y pagaron con gestión de cobro (${fN(P.n)}), la mitad pagó a más tardar el día hábil ${n1(P.med_dia_pago)} de mora con ${n1(P.med_gest)} gestiones, ${n1(P.med_contactos)} contactos y ${n1(P.med_rpc)} RPC (3 de cada 4: hasta ${n1(P.p75_gest)} gestiones, ${n1(P.p75_contactos)} contactos y ${n1(P.p75_rpc)} RPC). `
+    + `<b>Mínimo exigido</b>: ${n1(P.ritmo_min)} gestiones de gestor por día hábil en mora; desde el día ${P.dias_min ?? 3}, ${P.contactos_min ?? 2} contactos y ${P.rpc_min ?? 1} RPC con el titular; y no pasar 2 días hábiles sin gestión salvo que haya una promesa vigente. SMS y predictivo no cuentan como gestión.`;
+  const filasT = [...g.entries()].sort((a, b) => b[1].ins - a[1].ins || b[1].n - a[1].n);
+  const fila = (k, a, cls = '') => `<tr class="${cls}"><td>${esc(vp === 'mes_desembolso' && k !== 'Total' ? fMes(k) : k)}</td><td class="num">${fN(a.n)}</td><td class="num">${fN(a.ef)}</td><td class="num">${fN(a.ins)}</td>`
+    + `<td class="num${a.n >= 3 && pct(a.ins, a.n) > pct(tot.ins, tot.n) * 1.25 ? ' alerta' : ''}">${fP(pct(a.ins, a.n))}</td><td class="num">${fM(a.sIns)}</td><td class="num">${fN(a.sinG)}</td><td class="num">${fN(a.sinT)}</td><td class="num">${fN(a.ritmo)}</td><td class="num">${fN(a.dias)}</td></tr>`;
+  $('ppInt').innerHTML = `<table><thead><tr><th>${esc(DIM[vp] || vp)}</th><th class="num">Cuentas en 1PD</th><th class="num">Gestión efectiva</th><th class="num">Gestión insuficiente</th><th class="num">% insuficiente</th><th class="num">Saldo pagaré insuficiente</th><th class="num">Sin gestión</th><th class="num">Sin contacto con el titular</th><th class="num">Ritmo bajo</th><th class="num">2+ días sin gestión</th></tr></thead><tbody>`
+    + filasT.map(([k, a]) => fila(k, a)).join('') + (evaluadas.length ? fila('Total', tot, 'total') : '<tr><td colspan="10">Sin cuentas en 1PD con los filtros aplicados.</td></tr>') + '</tbody></table>';
+  if (!$('ppIntLista')) return;
+  const L = evaluadas.filter(i => dv(D, 'int_estado', i) === 'Gestión insuficiente')
+    .sort((a, b) => String(dv(D, 'int_prioridad', a)).localeCompare(String(dv(D, 'int_prioridad', b))) || mv(D, 'saldopagare', b) - mv(D, 'saldopagare', a));
+  const v = (c, i) => esc(dv(D, c, i) ?? '');
+  $('ppIntLista').innerHTML = `<table><thead><tr><th>Prioridad</th><th>Crédito</th><th>Sucursal</th><th>Promotor</th><th>Gestor de cobro</th><th>Producto</th><th>Vence</th><th class="num">Saldo pagaré</th><th class="num">Días hábiles en mora</th><th class="num">Gestiones en mora</th><th class="num">Gestiones día vencimiento</th><th class="num">Contactos</th><th class="num">RPC</th><th>Promesa vigente</th><th>Motivo</th></tr></thead><tbody>`
+    + L.map(i => `<tr><td>${v('int_prioridad', i)}</td><td>${v('credito', i)}</td><td>${v('sucursal', i)}</td><td>${v('promotor', i)}</td><td>${v('int_gestor', i)}</td><td>${v('producto_comercial', i)}</td><td>${fDia(dv(D, 'primera_cuota', i) || '')}</td>`
+      + `<td class="num">${fN(mv(D, 'saldopagare', i))}</td><td class="num">${fN(mv(D, 'int_dias', i))}</td><td class="num">${fN(mv(D, 'int_gest', i))}</td><td class="num">${fN(mv(D, 'int_gdv', i))}</td><td class="num">${fN(mv(D, 'int_con', i))}</td><td class="num">${fN(mv(D, 'int_rpc', i))}</td>`
+      + `<td>${dv(D, 'int_prom_vig', i) === 'Sí' ? `Sí (${fDia(dv(D, 'int_fprom', i))})` : 'No'}</td><td class="motivo">${v('int_motivo', i)}</td></tr>`).join('')
+    + (L.length ? '' : '<tr><td colspan="15">Ninguna cuenta con gestión insuficiente con los filtros aplicados.</td></tr>') + '</tbody></table>';
+}
 
 function detalleMoraPP(D, idx) {
   const L = idx.filter(i => ['En mora', 'Vencida sin pago registrado'].includes(dv(D, 'estado_primer_pago', i)))
@@ -776,11 +830,30 @@ const fDec = (v, d) => (v == null || !isFinite(v) ? '—' : v.toLocaleString('es
 const ROD_ORDEN = ['MEJORA', 'MANTIENE', 'DESMEJORA', 'CANCELADO', 'SIN DATO'];
 const ROD_COLOR = [SERIE[0], SERIE[1], SERIE[2], GRIS, '#E6E8EC'];
 
+// Textos de la medición abierta: nPD (debe n cuotas) o mora de la cuota n (no pagó esa cuota)
+function medicion(D) {
+  const n = D.meta.n || 1, mc = D.meta.tipo === 'mc', U = mc ? 1 : n;
+  const PD = mc ? `Mora cuota ${n}` : `${n}PD`;
+  const tx = s => String(s).replace(/1PD/g, PD).replace(/1 o más cuotas vencidas/g, `${U} o más cuotas vencidas`)
+    .replace(/de la primera cuota/g, n === 1 ? 'de la primera cuota' : `de la cuota ${n}`);
+  return { n, mc, U, PD, tx };
+}
+function selectorPD(D) {
+  const { n, mc } = medicion(D);
+  return `<div class="segbtns"><span>${mc ? 'Cuota' : 'Ver'}</span>${(mc ? [2, 3, 4, 5, 6] : [1, 2, 3, 4, 5, 6]).map(x => `<button type="button" data-segpd="${x}" class="${x === n ? 'on' : ''}">${mc ? `Cuota ${x}` : `${x}PD`}</button>`).join('')}</div>`;
+}
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-segpd]');
+  if (!b) return;
+  if (S.tab === 'pp_mora_cuota') S.mc = +b.dataset.segpd; else S.seg.pd = +b.dataset.segpd;
+  await abrir(S.tab);
+});
+
 function segAgregar(D, idx) {
   const k = S.seg.k, by = S.seg.by, col = c => D.datos[`${k}_${c}`];
   const W = D.datos.w, meses = D.meta.meses;
   const m = Object.fromEntries(meses.map(x => [x, { n: 0, w: 0, incl: 0, inclw: 0, pdn: 0, pdw: 0, r: {}, c: {}, sing: 0, singw: 0, visg: 0, visc: 0, visw: 0, m1c: 0 }]));
-  const cols = new Set(['pd', 'm5', 'prev', 'm1', 'gd1', 'tel12', 'pago2', 'sintel', 'r_pred', 'r_fila', 'r_gestor', 'r_ref', 'r_vis']);
+  const cols = new Set(['pd', 'm5', 'prev', 'm1', 'gd1', 'tel12', 'pago2', 'sintel', 'r_pred', 'r_fila', 'r_gestor', 'r_ref', 'r_vis'].filter(c => col(c)));
   const sumas = ['dsp2', 'dsp', 'dsp0', 'gm', 'prn', 'prplazo', 'prok', 'prev_n', 'gca', 'dca', 'visrpc', 'visg'];
   const C = Object.fromEntries([...cols, ...sumas, 'incl', 'sing', 'm1'].map(c => [c, col(c)]));
   for (const i of idx) {
@@ -812,8 +885,10 @@ function segValor(I, a) {
 const segFmt = I => (I.f || (I.n ? fM : fN));
 
 function pintarSeguimiento(D) {
-  S.seg = S.seg || { k: 'd', by: 'w', mes: null };
   S.seg.by = 'w';   // la gerencia de riesgo lo mira en saldo pagaré
+  const { n: nPD, mc, U, PD, tx } = medicion(D);
+  const conReglas = !!D.datos[`${S.seg.k}_r_pred`];
+  const INDS = SEG_IND.filter(I => !(I.r || []).some(c => !D.datos[`${S.seg.k}_${c}`]));
   const meses = D.meta.meses, actual = meses[meses.length - 1], cerrados = meses.slice(0, -1);
   const idx = filas(D, filtrosActivos());
   const A = segAgregar(D, idx);
@@ -821,11 +896,11 @@ function pintarSeguimiento(D) {
   const mesSel = S.seg.mes && meses.includes(S.seg.mes) ? S.seg.mes : actual;
   const dHoy = +D.meta.hoy.slice(8);
   $('segCtl').hidden = false;
-  $('segCtl').innerHTML = `<div class="segbtns"><span>Medir cada mes</span>`
+  $('segCtl').innerHTML = selectorPD(D) + `<div class="segbtns"><span>Medir cada mes</span>`
     + `<button type="button" data-segk="d" class="${k === 'd' ? 'on' : ''}">A la misma fecha (día ${dHoy})</button>`
     + `<button type="button" data-segk="c" class="${k === 'c' ? 'on' : ''}">Al cierre del mes</button></div>`
     + `<label class="small segmes">Mes del detalle <select id="segMes">${meses.slice().reverse().map(m => `<option value="${m}"${m === (S.seg.mes || actual) ? ' selected' : ''}>${fMes(m)}${m === actual ? '*' : ''}</option>`).join('')}</select></label>`
-    + `<span class="small muted">Todo en saldo pagaré. Fotos: MCCollect ${fDia(D.meta.foto_mccollect)} · Cendoc ${fDia(D.meta.foto_cendoc)} · ${fMes(actual)} medido a hoy en las dos opciones. Tarjetas: <b class="ok-txt">verde</b> = igual o mejor que el promedio de los 12 meses anteriores al mismo corte; <b class="alerta-txt">rojo</b> = peor.</span>`;
+    + `<span class="small muted">${mc ? `Mora de la cuota ${nPD}: cuentas que no pagaron su cuota ${nPD} (1 o más cuotas vencidas), aunque hayan pagado las anteriores. ` : nPD > 1 ? `${nPD}PD: cuentas que no han pagado ninguna de sus primeras ${nPD} cuotas (${nPD} o más cuotas vencidas). ` : ''}Todo en saldo pagaré. Fotos: MCCollect ${fDia(D.meta.foto_mccollect)} · Cendoc ${fDia(D.meta.foto_cendoc)} · ${fMes(actual)} medido a hoy en las dos opciones. Tarjetas: <b class="ok-txt">verde</b> = igual o mejor que el promedio de los 12 meses anteriores al mismo corte; <b class="alerta-txt">rojo</b> = peor.</span>`;
 
   const prom = I => { const v = cerrados.map(m => segValor(I, A[m])).filter(x => x != null); return v.length ? v.reduce((s, x) => s + x, 0) / v.length : null; };
   const peor = (I, v, ref) => v != null && ref != null && (I.mejor === 'bajo' ? v > ref : v < ref);
@@ -835,15 +910,15 @@ function pintarSeguimiento(D) {
     return [l, segFmt(I)(v), `promedio ${cerrados.length} meses al mismo corte: ${segFmt(I)(ref)} · ${peor(I, v, ref) ? 'peor' : 'igual o mejor'}`, peor(I, v, ref) ? 'rojo' : 'verde'];
   };
   kpis([
-    kp('inc', `1PD ${fMes(actual)} (al ${fDia(D.meta.hoy)})`), kp('m5', 'Mora a 5 días hábiles'),
+    kp('inc', `${PD} ${fMes(actual)} (al ${fDia(D.meta.hoy)})`), kp('m5', 'Mora a 5 días hábiles'),
     kp('gd1', 'Gestionadas el 1.er día de mora'), kp('sing', 'Días en mora sin gestión'),
-    kp('cumple', 'Promesas cumplidas'), kp('r_gestor', 'Regla: gestión de gestor'),
+    kp('cumple', 'Promesas cumplidas'), conReglas ? kp('r_gestor', 'Regla: gestión de gestor') : kp('pago2', 'Salen de mora al 2.º día hábil'),
   ]);
 
   const etiq = meses.map(m => fMes(m) + (m === actual ? '*' : ''));
   const colores = I => meses.map(m => { const v = segValor(I, A[m]), ref = prom(I); return m === actual ? (peor(I, v, ref) ? '#EE232E' : SERIE[1]) : peor(I, v, ref) ? SERIE[2] : SERIE[1]; });
   const nota = k === 'd' ? `Cada mes medido a su día ${dHoy}` : 'Cada mes medido a su cierre';
-  $('graficos').innerHTML =
+  $('graficos').innerHTML = tx(
     tarjeta('gSegInc', 'Incumplimiento 1PD por mes', `${nota}: cuotas con 1 o más cuotas vencidas en la foto de MCCollect del corte, sobre las cuotas ya vencidas. Ámbar: peor que el promedio de los meses cerrados; rojo: el mes en curso peor que ese promedio.`, { ancho: true })
     + `<article class="graf ancho"><div class="cab"><h3>Embudo de cobranza de las cuentas en mora</h3><span class="small muted">Saldo pagaré de las cuentas que amanecieron en mora al día siguiente del vencimiento, según lo que lograron las gestiones desde el día 1 de mora hasta el corte. En gris, el % sobre el paso anterior.</span></div><div class="tabla-caja seg-tabla" id="segEmbudo"></div></article>`
     + tarjeta('gSegConv', '¿Un RPC más alto trae más promesas y más pago?', 'Por mes: % del saldo en mora con RPC, % del saldo con RPC que llegó a promesa, % de lo prometido que se cumplió y % del saldo en mora que salió de mora al corte.', { ancho: true, leyenda: [['Con RPC', SERIE[1]], ['Promesa sobre RPC', SERIE[2]], ['Cumplida sobre promesa', SERIE[0]], ['Salió de mora', '#06255B']] })
@@ -852,23 +927,23 @@ function pintarSeguimiento(D) {
     + tarjeta('gSegM5', 'Mora a 5 días hábiles', 'Comparable entre meses: cuotas con 6 días hábiles observados.', {})
     + tarjeta('gSegGd1', 'Gestionadas el primer día de mora', '% de las cuentas en mora al día siguiente del vencimiento.', {})
     + tarjeta('gSegSing', 'Días en mora sin gestión', '% de los días en mora sin promesa; menos es mejor.', {})
-    + tarjeta('gSegReg', 'Cumplimiento de las reglas de cobro FPD', 'Cuentas en mora que cumplen cada regla (cono de MCCollect).', { leyenda: [['Predictivo', SERIE[3]], ['Fila MCC', SERIE[1]], ['Gestión de gestor', SERIE[0]], ['Referencias', SERIE[2]], ['Visita', '#06255B']] })
+    + (conReglas ? tarjeta('gSegReg', 'Cumplimiento de las reglas de cobro FPD', 'Cuentas en mora que cumplen cada regla (cono de MCCollect).', { leyenda: [['Predictivo', SERIE[3]], ['Fila MCC', SERIE[1]], ['Gestión de gestor', SERIE[0]], ['Referencias', SERIE[2]], ['Visita', '#06255B']] }) : '')
     + tarjeta('gSegRod', 'Rodamiento de Cendoc a la fecha de corte', 'Cuotas 1PD ya vencidas según el rodamiento de Cendoc en la foto del corte.', { leyenda: ROD_ORDEN.map((t, j) => [t, ROD_COLOR[j]]) })
     + tarjeta('gSegCos', 'Mora a 5 días hábiles por mes de colocación', 'Mes de desembolso con 100 cuotas o más observadas a 5 días hábiles.', {})
     + tarjeta('gSegVen', `${fMes(mesSel)}${mesSel === actual ? '*' : ''} por fecha de vencimiento`, `Cuotas según el día en que vencen y cómo están al corte (${fDia(corte(mesSel))}).`, { ancho: true, leyenda: [['Al día', SERIE[0]], ['En 1PD', '#EE232E'], ['Por vencer', GRIS]] })
-    + (veTablas() ? `<article class="graf ancho"><div class="cab"><h3>Cuentas en 1PD · ${fMes(mesSel)}${mesSel === actual ? '*' : ''}</h3></div><p class="nota">Gestiones desde 3 días hábiles antes del vencimiento hasta el corte. Ordenadas por vencimiento y saldo.</p><div class="tabla-caja" id="segLista"></div></article>` : '');
+    + (veTablas() ? `<article class="graf ancho"><div class="cab"><h3>Cuentas en 1PD · ${fMes(mesSel)}${mesSel === actual ? '*' : ''}</h3></div><p class="nota">Gestiones desde 3 días hábiles antes del vencimiento hasta el corte. Ordenadas por vencimiento y saldo.</p><div class="tabla-caja" id="segLista"></div></article>` : ''));
 
   const I1 = ind('inc');
   barrasSimples('gSegInc', etiq, meses.map(m => segValor(I1, A[m])), {
     horizontal: false, fmt: fP, color: colores(I1),
-    extra: it => { const a = A[meses[it[0].dataIndex]]; return [`${fN(a.pdn)} de ${fN(a.incl)} cuotas vencidas en 1PD`, `Saldo pagaré en 1PD ${fM(a.pdw)} de ${fM(a.inclw)}`, `Corte: ${fDia(corte(meses[it[0].dataIndex]))}`]; },
+    extra: it => { const a = A[meses[it[0].dataIndex]]; return [`${fN(a.pdn)} de ${fN(a.incl)} cuotas vencidas en ${PD}`, `Saldo pagaré en 1PD ${fM(a.pdw)} de ${fM(a.inclw)}`, `Corte: ${fDia(corte(meses[it[0].dataIndex]))}`]; },
     clic: j => ({ mes_cobro: meses[j] }),
   });
   for (const [id, I] of [['gSegM5', ind('m5')], ['gSegGd1', ind('gd1')], ['gSegSing', ind('sing')]]) {
     barrasSimples(id, etiq, meses.map(m => segValor(I, A[m])), { horizontal: false, fmt: fP, color: colores(I), extra: it => [`Promedio meses cerrados: ${fP(prom(I))}`], clic: j => ({ mes_cobro: meses[j] }) });
   }
   const RG = [['r_pred', 'Predictivo', SERIE[3]], ['r_fila', 'Fila MCC', SERIE[1]], ['r_gestor', 'Gestión de gestor', SERIE[0]], ['r_ref', 'Referencias', SERIE[2]], ['r_vis', 'Visita', '#06255B']];
-  lineas('gSegReg', etiq, RG.map(([id, t, c]) => ({ t, c, v: meses.map(m => segValor(ind(id), A[m])) })), { fmt: fP, clic: j => ({ mes_cobro: meses[j] }) });
+  if (conReglas) lineas('gSegReg', etiq, RG.map(([id, t, c]) => ({ t, c, v: meses.map(m => segValor(ind(id), A[m])) })), { fmt: fP, clic: j => ({ mes_cobro: meses[j] }) });
 
   // Cendoc: rodamiento al corte
   const rod = meses.map(() => Object.fromEntries(ROD_ORDEN.map(r => [r, 0])));
@@ -907,9 +982,9 @@ function pintarSeguimiento(D) {
   }
   const fechasV = [...ven.keys()].sort();
   const vv = key => fechasV.map(f => (S.seg.by === 'n' ? ven.get(f)[key] : ven.get(f).w[{ ok: 0, pd: 1, pv: 2 }[key]]));
-  barrasApiladas('gSegVen', fechasV.map(fDia), [{ t: 'Al día', c: SERIE[0], v: vv('ok') }, { t: 'En 1PD', c: '#EE232E', v: vv('pd') }, { t: 'Por vencer', c: GRIS, v: vv('pv') }], {
+  barrasApiladas('gSegVen', fechasV.map(fDia), [{ t: 'Al día', c: SERIE[0], v: vv('ok') }, { t: `En ${PD}`, c: '#EE232E', v: vv('pd') }, { t: 'Por vencer', c: GRIS, v: vv('pv') }], {
     todas: true, fmt: S.seg.by === 'n' ? fN : fM,
-    extra: it => { const a = ven.get(fechasV[it[0].dataIndex]), t = a.ok + a.pd; return [`${fN(a.pd)} en 1PD de ${fN(t)} vencidas (${fP(pct(a.pd, t))})`]; },
+    extra: it => { const a = ven.get(fechasV[it[0].dataIndex]), t = a.ok + a.pd; return [`${fN(a.pd)} en ${PD} de ${fN(t)} vencidas (${fP(pct(a.pd, t))})`]; },
     clic: j => ({ dia_vence: fechasV[j] }),
   });
 
@@ -967,7 +1042,7 @@ function pintarSeguimiento(D) {
   // Tabla de indicadores
   let html = `<table><thead><tr><th>Indicador</th>${etiq.map(e => `<th class="num">${e}</th>`).join('')}<th class="num">Promedio cerrados</th></tr></thead><tbody>`;
   let grupo = '';
-  for (const I of SEG_IND) {
+  for (const I of INDS) {
     if (I.g !== grupo) { grupo = I.g; html += `<tr class="grupo"><td colspan="${meses.length + 2}">${grupo}</td></tr>`; }
     const vals = meses.map(m => segValor(I, A[m])), ref = prom(I), cer = vals.slice(0, -1).filter(v => v != null);
     const mejorV = cer.length ? (I.mejor === 'bajo' ? Math.min(...cer) : Math.max(...cer)) : null;
@@ -984,7 +1059,7 @@ function pintarSeguimiento(D) {
     + `<tr><td>Saldo pagaré de las cuotas ya vencidas al corte</td>${meses.map(m => `<td class="num">${S.seg.by === 'n' ? fN(A[m].incl) : fM(A[m].inclw)}</td>`).join('')}<td></td></tr>`
     + `<tr><td>Saldo pagaré en 1PD al corte</td>${meses.map(m => `<td class="num">${S.seg.by === 'n' ? fN(A[m].pdn) : fM(A[m].pdw)}</td>`).join('')}<td></td></tr>`
     + `<tr><td>Fecha de corte</td>${meses.map(m => `<td class="num">${fDia(corte(m))}</td>`).join('')}<td></td></tr>`;
-  $('segTabla').innerHTML = html + '</tbody></table>';
+  $('segTabla').innerHTML = tx(html + '</tbody></table>');
 
   // Lista de cuentas en 1PD del mes elegido
   if (veTablas()) {
@@ -1007,19 +1082,47 @@ function minimoRelativo(ns) {
   return Math.max(1, Math.ceil(0.05 * Math.max(0, ...ns)));
 }
 
+const sumaMes = (m, k) => { const [a, b] = m.split('-').map(Number), t = a * 12 + (b - 1) + k; return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, '0')}`; };
+const difMes = (a, b) => { const [y1, m1] = a.split('-').map(Number), [y2, m2] = b.split('-').map(Number); return (y1 - y2) * 12 + (m1 - m2); };
+// Semáforo por columna (verde = mejor de la columna, rojo = peor), como la tabla de PD's del Power BI
+function calor(v, min, max) {
+  if (v == null || !isFinite(v) || max <= min) return '';
+  const t = Math.min(1, Math.max(0, (v - min) / (max - min)));
+  const mezcla = (c1, c2, x) => c1.map((c, i) => Math.round(c + (c2[i] - c) * x));
+  const c = t < 0.5 ? mezcla([183, 221, 160], [250, 226, 140], t * 2) : mezcla([250, 226, 140], [240, 128, 128], (t - 0.5) * 2);
+  return `background:rgb(${c.join(',')}) !important`;
+}
+
 function pintarCosecha1PD(D) {
-  S.seg = S.seg || { k: 'd', by: 'w', mes: null };
   const meses = D.meta.meses, actual = meses[meses.length - 1], k = S.seg.k, dHoy = +D.meta.hoy.slice(8);
+  const { n: nPD, PD } = medicion(D);
   const idx = filas(D, filtrosActivos());
   $('segCtl').hidden = false;
-  $('segCtl').innerHTML = `<div class="segbtns"><span>Medir cada mes de cobro</span>`
+  $('segCtl').innerHTML = selectorPD(D) + `<div class="segbtns"><span>Medir cada mes de cobro</span>`
     + `<button type="button" data-segk="d" class="${k === 'd' ? 'on' : ''}">A la misma fecha (día ${dHoy})</button>`
     + `<button type="button" data-segk="c" class="${k === 'c' ? 'on' : ''}">Al cierre del mes</button></div>`
-    + `<span class="small muted">Todo en saldo pagaré. Una cosecha (mes de desembolso) tiene primeras cuotas que vencen en uno o dos meses de cobro; aquí se ve cuánto aporta cada uno a su 1PD.</span>`;
+    + `<span class="small muted">Todo en saldo pagaré. nPD = no ha pagado ninguna de sus primeras n cuotas. El selector cambia el embudo, los cortes y la intensidad; la tabla de PD's muestra los seis.</span>`;
   const W = D.datos.w, incl = D.datos[`${k}_incl`], pdc = D.datos[`${k}_pd`];
-  // cosechas desde el mes anterior al primer mes de cobro (las más viejas no tienen todas sus primeras cuotas en la ventana)
+
+  // ---- Tabla de PD's por cosecha (1PD a 6PD): una fila por crédito con su marca en cada cuota
+  const P = D.pds, ip = P ? filas(P, filtrosActivos()) : [], M0 = (P?.meta?.meses || meses)[0];
+  const T = new Map();
+  for (const i of ip) {
+    const c = dv(P, 'mes_desembolso', i); if (!c || c === 'SIN DATO') continue;
+    const a = T.get(c) || { n: 0, w: 0, i: Array(7).fill(0), p: Array(7).fill(0) }; T.set(c, a);
+    const w = P.datos.w[i] || 0; a.n++; a.w += w;
+    for (let x = 1; x <= 6; x++) if (P.datos[`${k}${x}_i`]?.[i] === 1) { a.i[x] += w; if (P.datos[`${k}${x}_p`][i] === 1) a.p[x] += w; }
+  }
+  // una cosecha solo muestra el xPD si todas sus cuotas x caen dentro de los 13 meses con fotos diarias
+  const completa = (c, x) => difMes(sumaMes(c, x - 1), M0) >= 0;
+  const cosPD = [...T.keys()].filter(c => completa(c, 6)).filter(c => T.get(c).n >= minimoRelativo([...T.values()].map(a => a.n))).sort();
+  const valPD = (c, x) => { const a = T.get(c); return completa(c, x) && a.i[x] ? pct(a.p[x], a.i[x]) : null; };
+  const rango = [0, 1, 2, 3, 4, 5, 6].map(x => { const v = cosPD.map(c => valPD(c, x)).filter(y => y != null); return v.length ? [Math.min(...v), Math.max(...v)] : [0, 0]; });
+  const totPD = x => { let p = 0, i = 0; for (const c of cosPD) if (completa(c, x)) { p += T.get(c).p[x]; i += T.get(c).i[x]; } return pct(p, i); };
+
+  // ---- Matriz cosecha × mes de cobro del PD elegido
   const [ay, am] = meses[0].split('-').map(Number), mesPrevio = am === 1 ? `${ay - 1}-12` : `${ay}-${String(am - 1).padStart(2, '0')}`;
-  const M = new Map();   // cosecha → mes de cobro → {tot, venc, pd}
+  const M = new Map();
   for (const i of idx) {
     const c = dv(D, 'mes_desembolso', i), m = dv(D, 'mes_cobro', i), w = W[i] || 0;
     if (!c || c === 'SIN DATO') continue;
@@ -1031,38 +1134,92 @@ function pintarCosecha1PD(D) {
   }
   const sum = (fila, key) => [...fila.values()].reduce((s, a) => s + a[key], 0);
   const minCos = minimoRelativo([...M.values()].map(f => sum(f, 'n')));
-  const cosechas = [...M.keys()].filter(c => sum(M.get(c), 'n') >= minCos && c >= mesPrevio).sort();
-  const cols = meses;
-  const recientes = cosechas.slice(-8);
+  const cosechas = [...M.keys()].filter(c => sum(M.get(c), 'n') >= minCos && c >= sumaMes(mesPrevio, -(nPD - 1))).sort();
+  const recientes = cosechas.slice(-12);
   kpis(recientes.slice(-4).reverse().map((c, j) => {
     const f = M.get(c), v = sum(f, 'venc'), pd = sum(f, 'pd'), t = sum(f, 'tot');
-    return [`Cosecha ${fMes(c)}`, fP(pct(pd, v)), `1PD sobre lo ya vencido · ${fP(pct(t - v, t))} del saldo aún por vencer`, ['navy', 'cielo', '', 'lima'][j]];
+    return [`${PD} cosecha ${fMes(c)}`, fP(pct(pd, v)), `sobre lo ya vencido · ${fP(pct(t - v, t))} del saldo aún por vencer`, ['navy', 'cielo', '', 'lima'][j]];
   }));
+
+  // ---- Corte de cobranza (definición de Riesgo): cosecha de junio → 1.er corte junio, 2.º julio, 3.º agosto;
+  // para el nPD se corre n-1 meses (la cuota n vence n-1 meses después de la primera)
+  const corteDe = i => { const c = dv(D, 'mes_desembolso', i), m = dv(D, 'mes_cobro', i); return c && m ? difMes(m, c) - (nPD - 1) + 1 : null; };
+  const ETAPAS = [['e_gest', 'Con alguna gestión'], ['e_int', 'Con intento'], ['e_con', 'Con contacto'], ['e_rpc', 'Con RPC'],
+    ['e_prom', 'Con promesa de pago'], ['e_cump', 'Promesa cumplida'], ['e_pago', 'Salió de mora al corte']];
+  const EC = [1, 2, 3].map(() => new Map());
+  const IN = new Map();   // cosecha|corte → intensidad
+  const col = c => D.datos[`${k}_${c}`];
+  for (const i of idx) {
+    if (col('e_gest')[i] == null) continue;   // solo cuentas en mora el día hábil siguiente al vencimiento
+    const c = dv(D, 'mes_desembolso', i), ct = corteDe(i); if (!recientes.includes(c) || !ct || ct > 3) continue;
+    const w = W[i] || 0, a = EC[ct - 1].get(c) || { base: 0, mes: dv(D, 'mes_cobro', i) }; EC[ct - 1].set(c, a);
+    a.base += w; for (const [e] of ETAPAS) if (col(e)[i] === 1) a[e] = (a[e] || 0) + w;
+    const key = `${c}|${ct}`, b = IN.get(key) || { c, ct, mes: dv(D, 'mes_cobro', i), w: 0, n: 0, gm: 0, gmc: 0, rpc: 0, dm: 0, gmDia: 0, sing: 0, singB: 0, pago: 0, pagoB: 0 };
+    IN.set(key, b);
+    b.n++; b.w += w; b.gm += (col('gm')[i] || 0) * w; b.gmc += (col('gmc')?.[i] || 0) * w; if ((col('gmr')?.[i] || 0) > 0) b.rpc += w;
+    b.dm += (col('dmora')[i] || 0) * w; b.gmDia += (col('gm')[i] || 0) * w;
+    if (col('sing')[i] != null) { b.singB += w; if (col('sing')[i] === 1) b.sing += w; }
+    if (col('e_pago')[i] != null) { b.pagoB += w; if (col('e_pago')[i] === 1) b.pago += w; }
+  }
+
   $('graficos').innerHTML =
-    `<article class="graf ancho"><div class="cab"><h3>1PD de cada cosecha según el mes en que cicla su primera cuota</h3><span class="small muted">Celda: % del saldo pagaré en 1PD sobre el saldo de las cuotas ya vencidas de esa cosecha en ese mes de cobro. Debajo, el saldo que cicla ese mes. Total: el 1PD de toda la cosecha.</span></div><div class="tabla-caja seg-tabla" id="cosTabla"></div></article>`
-    + tarjeta('gCosAporte', 'Aporte de cada mes de cobro al 1PD de la cosecha', 'Saldo pagaré en 1PD de cada cosecha, separado por el mes en que venció su primera cuota.', { ancho: true, leyenda: cols.slice(-6).map((m, j) => [fMes(m), PALETA[j % PALETA.length]]).concat([['Meses anteriores', GRIS]]) })
-    + tarjeta('gCosPD', '1PD de la cosecha y saldo aún por vencer', 'Barras: 1PD sobre el saldo ya vencido. Gris: % del saldo de la cosecha cuya primera cuota todavía no vence (el 1PD puede cambiar).', { ancho: true, leyenda: [['1PD de la cosecha', SERIE[2]], ['Saldo por vencer', GRIS]] });
-  let h = `<table><thead><tr><th>Cosecha</th>${cols.map(m => `<th class="num">${fMes(m)}${m === actual ? '*' : ''}</th>`).join('')}<th class="num">Total cosecha</th></tr></thead><tbody>`;
+    `<article class="graf ancho"><div class="cab"><h3>Tabla de PD's por cosecha</h3><span class="small muted">% del saldo pagaré en 1PD a 6PD sobre el saldo de las cuotas ya vencidas (${k === 'd' ? `cada mes medido a su día ${dHoy}` : 'al cierre de cada mes'}). Verde: mejor de la columna; rojo: peor. En blanco: la cuota aún no vence o cae antes de las fotos diarias (desde ${fMes(M0)}).</span></div><div class="tabla-caja seg-tabla" id="pdsTabla"></div></article>`
+    + `<article class="graf ancho"><div class="cab"><h3>${PD} de cada cosecha según el mes en que cicla la cuota ${nPD}</h3><span class="small muted">Celda: % del saldo pagaré en ${PD} sobre el saldo de las cuotas ${nPD} ya vencidas de esa cosecha en ese mes de cobro. Debajo, el saldo que cicla ese mes. Total: el ${PD} de toda la cosecha.</span></div><div class="tabla-caja seg-tabla" id="cosTabla"></div></article>`
+    + [1, 2, 3].map(ct => `<article class="graf ancho"><div class="cab"><h3>Embudo de cobranza ${PD} · corte ${ct}</h3><span class="small muted">Corte ${ct}: cuotas ${nPD} que vencen ${ct === 1 ? (nPD === 1 ? 'en el mismo mes de la cosecha' : `${nPD - 1} ${nPD === 2 ? 'mes' : 'meses'} después del mes de la cosecha`) : `${nPD - 1 + ct - 1} meses después del mes de la cosecha`} (debajo de cada cosecha, el mes de cobro). Saldo pagaré de las cuentas en mora al día hábil siguiente del vencimiento y lo que lograron las gestiones hasta el corte. En gris, el % sobre el paso anterior.</span></div><div class="tabla-caja seg-tabla" id="cosEmb${ct}"></div></article>`).join('')
+    + `<article class="graf ancho"><div class="cab"><h3>Intensidad de cobro por cosecha y corte · ${PD}</h3><span class="small muted">Cuentas en mora al día hábil siguiente del vencimiento, ponderadas por saldo pagaré. Gestiones de gestor (sin SMS ni predictivo) mientras la cuenta estuvo en mora, hasta 15 días hábiles.</span></div><div class="tabla-caja seg-tabla" id="cosInt"></div></article>`
+    + tarjeta('gCosInt', 'Gestiones por día hábil en mora, por cosecha y corte', 'Ritmo de gestión de gestor sobre las cuentas en mora (ponderado por saldo pagaré). Clic en una barra para filtrar la cosecha.', { ancho: true, leyenda: [['Corte 1', SERIE[1]], ['Corte 2', SERIE[2]], ['Corte 3', SERIE[0]]] });
+
+  // Tabla de PD's
+  let hp = `<table><thead><tr><th>Cosecha</th><th class="num">Cuentas</th><th class="num">Monto pagaré</th>${[1, 2, 3, 4, 5, 6].map(x => `<th class="num">${x} PD%</th>`).join('')}</tr></thead><tbody>`;
+  for (const c of cosPD) {
+    const a = T.get(c);
+    hp += `<tr><td><b>${fMes(c)}</b></td><td class="num">${fN(a.n)}</td><td class="num">${fM(a.w)}</td>${[1, 2, 3, 4, 5, 6].map(x => { const v = valPD(c, x);
+      return `<td class="num heat${v == null ? '' : ' clic'}" style="${calor(v, ...rango[x])}"${v == null ? '' : ` data-cos="${c}" title="${esc(`${fM(a.p[x])} en ${x}PD de ${fM(a.i[x])} vencido`)}"`}>${v == null ? '' : fP(v)}</td>`; }).join('')}</tr>`;
+  }
+  const tN = cosPD.reduce((s, c) => s + T.get(c).n, 0), tW = cosPD.reduce((s, c) => s + T.get(c).w, 0);
+  $('pdsTabla').innerHTML = hp + `<tr class="total"><td>Total</td><td class="num">${fN(tN)}</td><td class="num">${fM(tW)}</td>${[1, 2, 3, 4, 5, 6].map(x => `<td class="num">${fP(totPD(x))}</td>`).join('')}</tr></tbody></table>`
+    + (cosPD.length ? '' : '<p class="small muted">Sin datos con los filtros aplicados.</p>');
+
+  // Matriz del PD elegido
+  let h = `<table><thead><tr><th>Cosecha</th>${meses.map(m => `<th class="num">${fMes(m)}${m === actual ? '*' : ''}</th>`).join('')}<th class="num">Total cosecha</th></tr></thead><tbody>`;
   for (const c of cosechas.slice().reverse()) {
     const f = M.get(c), v = sum(f, 'venc'), pd = sum(f, 'pd');
-    h += `<tr><td><b>${fMes(c)}</b></td>${cols.map(m => { const a = f.get(m); if (!a) return '<td></td>';
+    h += `<tr><td><b>${fMes(c)}</b></td>${meses.map(m => { const a = f.get(m); if (!a) return '<td></td>';
       const p = pct(a.pd, a.venc), alto = p != null && p > 5;
-      return `<td class="num clic${alto ? ' fondo-ambar' : ''}" data-cos="${c}" data-cobro="${m}" title="${esc(`${fN(a.npd)} cuentas en 1PD de ${fN(a.n)} · 1PD ${fM(a.pd)} de ${fM(a.venc)} vencido`)}">${a.venc ? fP(p) : '<span class="muted">por vencer</span>'}<div class="sub">${fM(a.tot)}</div></td>`; }).join('')}`
+      return `<td class="num clic${alto ? ' fondo-ambar' : ''}" data-cos="${c}" data-cobro="${m}" title="${esc(`${fN(a.npd)} cuentas en ${PD} de ${fN(a.n)} · ${PD} ${fM(a.pd)} de ${fM(a.venc)} vencido`)}">${a.venc ? fP(p) : '<span class="muted">por vencer</span>'}<div class="sub">${fM(a.tot)}</div></td>`; }).join('')}`
       + `<td class="num tot">${fP(pct(pd, v))}<div class="sub">${fM(sum(f, 'tot'))}</div></td></tr>`;
   }
   $('cosTabla').innerHTML = h + '</tbody></table>';
-  const ult = cols.slice(-6);
-  barrasApiladas('gCosAporte', recientes.map(fMes), [...ult.map((m, j) => ({ t: fMes(m), c: PALETA[j % PALETA.length], v: recientes.map(c => M.get(c).get(m)?.pd || 0) })),
-    { t: 'Meses anteriores', c: GRIS, v: recientes.map(c => [...M.get(c).entries()].filter(([m]) => !ult.includes(m)).reduce((s, [, a]) => s + a.pd, 0)) }], {
-    fmt: fM, etiqueta: x => { const c = recientes[x.dataIndex], f = M.get(c), tot = sum(f, 'pd'); return `${x.dataset.label}: ${fM(x.raw)} · ${fP(pct(x.raw, tot))} del 1PD de la cosecha`; },
-    clic: (j, g) => (g == null || g >= ult.length ? { mes_desembolso: recientes[j] } : { mes_desembolso: recientes[j], mes_cobro: ult[g] }),
+
+  // Embudo por corte (una tabla por corte; columnas = cosechas)
+  for (const ct of [1, 2, 3]) {
+    const E = EC[ct - 1], cols = recientes.filter(c => E.has(c)).reverse();
+    if (!cols.length) { $(`cosEmb${ct}`).innerHTML = `<p class="small muted" style="padding:10px">Ninguna cosecha tiene cuotas ${nPD} en un ${['primer', 'segundo', 'tercer'][ct - 1]} mes de cobro con los filtros aplicados.</p>`; continue; }
+    let he = `<table><thead><tr><th>Paso</th>${cols.map(c => `<th class="num">${fMes(c)}<div class="sub">cobro ${fMes(E.get(c).mes)}${E.get(c).mes === actual ? '*' : ''}</div></th>`).join('')}</tr></thead><tbody>`
+      + `<tr><td>Saldo pagaré en mora (día 1)</td>${cols.map(c => `<td class="num">${fM(E.get(c).base)}</td>`).join('')}</tr>`;
+    ETAPAS.forEach(([e, t], j) => {
+      he += `<tr><td>${t}</td>${cols.map(c => { const a = E.get(c), v = a[e] || 0, prev = j === 0 || e === 'e_pago' ? a.base : a[ETAPAS[j - 1][0]] || 0;
+        return `<td class="num clic" data-cos="${c}" data-cobro="${a.mes}">${fP(pct(v, a.base))}${j && e !== 'e_pago' ? `<div class="sub">${fP(pct(v, prev))}</div>` : ''}</td>`; }).join('')}</tr>`;
+    });
+    $(`cosEmb${ct}`).innerHTML = he + '</tbody></table>';
+  }
+
+  // Intensidad por cosecha y corte
+  const filasI = [...IN.values()].sort((a, b) => b.c.localeCompare(a.c) || a.ct - b.ct);
+  const r1 = v => (v == null || !isFinite(v) ? '—' : fDec(v, 1));
+  $('cosInt').innerHTML = `<table><thead><tr><th>Cosecha</th><th>Corte</th><th>Mes de cobro</th><th class="num">Saldo en mora (día 1)</th><th class="num">Cuentas</th><th class="num">Gestiones por cuenta</th><th class="num">Contactos por cuenta</th><th class="num">% con RPC</th><th class="num">Gestiones por día en mora</th><th class="num">% sin gestión de gestor</th><th class="num">% salió de mora al corte</th></tr></thead><tbody>`
+    + filasI.map(b => `<tr><td><b>${fMes(b.c)}</b></td><td>${b.ct}</td><td>${fMes(b.mes)}${b.mes === actual ? '*' : ''}</td><td class="num">${fM(b.w)}</td><td class="num">${fN(b.n)}</td><td class="num">${r1(b.gm / b.w)}</td><td class="num">${r1(b.gmc / b.w)}</td>`
+      + `<td class="num">${fP(pct(b.rpc, b.w))}</td><td class="num">${r1(b.dm ? b.gmDia / b.dm : null)}</td><td class="num">${fP(pct(b.sing, b.singB))}</td><td class="num">${fP(pct(b.pago, b.pagoB))}</td></tr>`).join('')
+    + (filasI.length ? '' : '<tr><td colspan="11">Sin cuentas en mora con los filtros aplicados.</td></tr>') + '</tbody></table>';
+  const etq = recientes.filter(c => [1, 2, 3].some(ct => IN.has(`${c}|${ct}`)));
+  barrasAgrupadas('gCosInt', etq.map(fMes), [1, 2, 3].map(ct => ({ t: `Corte ${ct}`, c: [SERIE[1], SERIE[2], SERIE[0]][ct - 1],
+    v: etq.map(c => { const b = IN.get(`${c}|${ct}`); return b && b.dm ? +(b.gmDia / b.dm).toFixed(2) : null; }) })), {
+    fmt: v => fDec(v, 1),
+    extra: it => { const c = etq[it[0].dataIndex]; return [1, 2, 3].map(ct => IN.get(`${c}|${ct}`)).filter(Boolean).map(b => `Corte ${b.ct} (${fMes(b.mes)}): ${fN(b.n)} cuentas en mora · ${fM(b.w)} · salió ${fP(pct(b.pago, b.pagoB))}`); },
+    clic: j => ({ mes_desembolso: etq[j] }),
   });
-  barrasAgrupadas('gCosPD', recientes.map(fMes), [
-    { t: '1PD de la cosecha', c: SERIE[2], v: recientes.map(c => pct(sum(M.get(c), 'pd'), sum(M.get(c), 'venc'))) },
-    { t: 'Saldo por vencer', c: GRIS, v: recientes.map(c => { const f = M.get(c), t = sum(f, 'tot'); return pct(t - sum(f, 'venc'), t); }) },
-  ], { fmt: fP, extra: it => { const f = M.get(recientes[it[0].dataIndex]), t = sum(f, 'tot'), v = sum(f, 'venc'); return [`Saldo de la cosecha ${fM(t)}`, `Ya vencido ${fM(v)} · en 1PD ${fM(sum(f, 'pd'))} · por vencer ${fM(t - v)}`]; }, clic: j => ({ mes_desembolso: recientes[j] }) });
 }
-document.addEventListener('click', e => { const c = e.target.closest('[data-cos]'); if (c) filtrarDesdeGrafico({ mes_desembolso: c.dataset.cos, mes_cobro: c.dataset.cobro }); });
+document.addEventListener('click', e => { const c = e.target.closest('[data-cos]'); if (c) filtrarDesdeGrafico(c.dataset.cobro ? { mes_desembolso: c.dataset.cos, mes_cobro: c.dataset.cobro } : { mes_desembolso: c.dataset.cos }); });
 
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-segk],[data-segby]');
@@ -1301,8 +1458,8 @@ function pintar() {
   if (!D) { $('kpis').innerHTML = $('graficos').innerHTML = ''; $('tablaCaja').hidden = true; $('armarCaja').hidden = true; $('preguntas').hidden = !CFG.IA_CLAUDE; return; }
   pintarFiltros(D);
   $('segCtl').hidden = true;
-  ({ cosecha: pintarCosecha, cartera_activa: pintarCartera, primeros_pagos: pintarPrimeros, cono: pintarCono, pp_seguimiento: pintarSeguimiento, pp_cosecha: pintarCosecha1PD })[S.tab](D);
-  if (S.tab === 'pp_seguimiento' || S.tab === 'pp_cosecha') $('tablaCaja').hidden = true;
+  ({ cosecha: pintarCosecha, cartera_activa: pintarCartera, primeros_pagos: pintarPrimeros, cono: pintarCono, pp_seguimiento: pintarSeguimiento, pp_mora_cuota: pintarSeguimiento, pp_cosecha: pintarCosecha1PD })[S.tab](D);
+  if (PP_TABS.includes(S.tab)) $('tablaCaja').hidden = true;
   pintarArmar(D);
   $('btnDescargar').title = S.tab === 'cono' ? 'Descarga la base completa de créditos'
     : 'Descarga en Excel los créditos de esta pestaña con los filtros aplicados';
@@ -1310,6 +1467,24 @@ function pintar() {
 }
 
 $('tabs').addEventListener('click', e => { const b = e.target.closest('button[data-tab]'); if (b) abrir(b.dataset.tab); });
+
+// ---------- Tablas al ancho de la pantalla: se achica la letra (hasta 10 px) en vez de obligar a desplazarse ----------
+function ajustarTablas() {
+  document.querySelectorAll('main .tabla-caja').forEach(c => {
+    const t = c.querySelector(':scope > table');
+    if (!t || !c.clientWidth) return;
+    t.style.fontSize = ''; t.style.removeProperty('--k');
+    const base = parseFloat(getComputedStyle(t).fontSize);
+    let fs = base;
+    while (t.scrollWidth > c.clientWidth + 1 && fs > 10) {
+      fs -= 0.5; t.style.fontSize = `${fs}px`; t.style.setProperty('--k', (fs / base).toFixed(3));
+    }
+  });
+}
+let ajusteProg = 0;
+const programarAjuste = () => { cancelAnimationFrame(ajusteProg); ajusteProg = requestAnimationFrame(ajustarTablas); };
+new MutationObserver(programarAjuste).observe(document.querySelector('main'), { childList: true, subtree: true });
+window.addEventListener('resize', programarAjuste);
 
 // ---------- Descarga ----------
 // Con filtros: solo las filas filtradas de la pestaña, con las mismas columnas del Excel completo (se arma en el navegador)
@@ -1379,7 +1554,7 @@ function aviso(texto, error = false) {
 }
 
 $('btnActualizar').addEventListener('click', async () => {
-  if (LOCAL) { S.datos = {}; await leerMeta(); return abrir(S.tab); }
+  if (LOCAL) { S.datos = {}; S.arch = {}; await leerMeta(); return abrir(S.tab); }
   const btn = $('btnActualizar');
   btn.disabled = true; btn.textContent = 'Actualizando…';
   // Una actualización "procesando" de hace más de 3 h se da por interrumpida (la PC se apagó a media carga)
@@ -1401,7 +1576,7 @@ $('btnActualizar').addEventListener('click', async () => {
     for (;;) {
       await new Promise(r => setTimeout(r, 5000));
       const e = ok(await sb.from('cvc_actualizaciones').select('estado,mensaje').eq('id', id).single());
-      if (e.estado === 'ok') { aviso(''); S.datos = {}; await leerMeta(); await abrir(S.tab); break; }
+      if (e.estado === 'ok') { aviso(''); S.datos = {}; S.arch = {}; await leerMeta(); await abrir(S.tab); break; }
       if (e.estado === 'error') { aviso(`La actualización falló: ${e.mensaje || ''}`, true); break; }
       if (e.estado === 'procesando') { if (!actual) { btn.textContent = 'Procesando…'; aviso(''); } continue; }
       if (Date.now() - t0 > 60000) {  // sigue pendiente: ¿el proceso está ocupado con otra carga o no está corriendo?
@@ -1581,7 +1756,7 @@ const SUGERENCIAS = {
 function sugerencias() {
   $('fpregunta').hidden = $('sugIA').hidden = !CFG.IA_CLAUDE;
   if (!CFG.IA_CLAUDE) return;
-  const mias = PESTANAS.filter(p => p.roles.includes(rol()));
+  const mias = misPestanas().filter(p => SUGERENCIAS[p.id]);
   $('sugIA').innerHTML = mias.map(p => `<button type="button">${esc(SUGERENCIAS[p.id])}</button>`).join('');
 }
 $('sugIA').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { $('pregunta').value = b.textContent; $('pregunta').focus(); } });
@@ -1673,7 +1848,7 @@ $('btnClave').addEventListener('click', async () => {
   } catch { alert('La contraseña actual no es correcta.'); }
 });
 
-$('btnSalir').addEventListener('click', async () => { await sb.auth.signOut(); S.perfil = null; S.datos = {}; mostrarLogin(); });
+$('btnSalir').addEventListener('click', async () => { await sb.auth.signOut(); S.perfil = null; S.datos = {}; S.arch = {}; mostrarLogin(); });
 
 (async () => {
   try {
