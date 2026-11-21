@@ -29,9 +29,11 @@ def main():
         git("init", "-b", "main")
         git("remote", "add", "origin", REPO)
     pub = DESTINO / "public"
-    if pub.exists():
-        shutil.rmtree(pub)
-    shutil.copytree(RAIZ / "public", pub, ignore=shutil.ignore_patterns("local"))
+    # se copia encima (OneDrive no deja borrar la carpeta entera) y luego se quitan los archivos que ya no existen
+    shutil.copytree(RAIZ / "public", pub, ignore=shutil.ignore_patterns("local"), dirs_exist_ok=True)
+    for f in [x for x in pub.rglob("*") if x.is_file()]:
+        if not (RAIZ / "public" / f.relative_to(pub)).exists():
+            f.unlink()
     cfg = (pub / "config.js").read_text(encoding="utf-8")
     cfg, n = re.subn(r"HERRAMIENTA:\s*'cuentas'", "HERRAMIENTA: 'pds'", cfg)
     assert n == 1, "config.js no tiene HERRAMIENTA: 'cuentas'"
