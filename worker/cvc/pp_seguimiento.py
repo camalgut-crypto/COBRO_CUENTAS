@@ -4,8 +4,9 @@
 - "dia":    a la misma fecha (el día del mes de hoy; si el mes es más corto, su último día).
 - "cierre": al fin de mes (indicador oficial 1PD). El mes en curso se mide a hoy en las dos.
 
-Universo de la cuota n: créditos REGULAR (sin Convenio) del Loan Tape cuya cuota n (primera cuota + n-1 meses) cae en
-los últimos 13 meses.
+Universo de la cuota n: créditos del Loan Tape (Convenio incluido desde el 23-nov-2026; se separa con el filtro Producto
+Madre) cuya cuota n (primera cuota + n-1 meses) cae en los últimos 13 meses. La intensidad de gestión sigue sin Convenio
+(se cobra por planilla).
 - nPD (indicador oficial): la foto de MCCollect del corte trae n o más cuotas vencidas, es decir, no pagó ninguna de
   sus primeras n cuotas (validado 100% contra la marca 1PD-4PD de th_pds_mensual del Power BI, 19-nov-2026).
 - Mora por cuota n: la cuota n quedó sin pagar (1 o más cuotas vencidas), aunque haya pagado las anteriores.
@@ -67,7 +68,7 @@ def universo(b: pd.DataFrame, hoy: pd.Timestamp, n: int = 1) -> tuple[pd.DataFra
     mes_hoy = hoy.to_period("M")
     meses = [str(p) for p in pd.period_range(mes_hoy - (MESES_HIST - 1), mes_hoy, freq="M")]
     ini, fin = pd.Period(meses[0]).start_time, mes_hoy.end_time.normalize()
-    r = b[(b["producto_madre"] != "CONV") & b["primera_cuota"].notna()].copy()
+    r = b[b["primera_cuota"].notna()].copy()
     if n > 1:
         r = r[pd.to_numeric(r["numero_cuotas"], errors="coerce").fillna(99) >= n]
     base = pd.DatetimeIndex(r["primera_cuota"]).normalize()
@@ -586,8 +587,10 @@ def generar(cfg: dict, b: pd.DataFrame, hoy) -> dict:
             tablas[(tipo, n)] = calcular(u, car, ges, cen, meses, cts, hoy, ult_car, fechas_cendoc, U=U)
             logging.info("Seguimiento PP: %s cuotas %s%s (%.0f s)", f"{len(tablas[(tipo, n)]):,}", n,
                          "PD" if tipo == "pd" else " mora por cuota", reloj.time() - t1)
-    P = parametro_intensidad(tablas[("pd", 1)], meses[-1])
-    inten = intensidad(tablas[("pd", 1)], meses[-1], P)
+    t1pd = tablas[("pd", 1)]
+    t1pd = t1pd[t1pd["producto_madre"] != "CONV"]   # Convenio se cobra por planilla: fuera del parámetro de gestión
+    P = parametro_intensidad(t1pd, meses[-1])
+    inten = intensidad(t1pd, meses[-1], P)
     logging.info("Seguimiento PP: listo en %.0f s; intensidad: %s de %s cuentas en 1PD con gestión insuficiente",
                  reloj.time() - t0, int((inten["int_estado"] == "Gestión insuficiente").sum()), len(inten))
     meta = {"meses": meses, "hoy": str(hoy.date()), "foto_mccollect": str(ult_car.date()),
