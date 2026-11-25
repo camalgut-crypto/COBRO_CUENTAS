@@ -374,9 +374,9 @@ def calcular(u: pd.DataFrame, car: pd.DataFrame, ges: pd.DataFrame, cen: pd.Data
         out[pre + "prev"] = np.where(incl, tiene(gg[gg["relb"].between(-3, -1)]), np.nan)
         out[pre + "gd1"] = np.where(mora1, tiene(gg[gg["relb"] == 1]), np.nan)
         out[pre + "tel12"] = np.where(mora1, tiene(Gk[Gk["tel"] & Gk["relb"].between(1, 2)]), np.nan)
-        # Paga solo: cuota vencida que al corte no está en mora y no tuvo ninguna gestión de ningún tipo (SMS, predictivo,
-        # gestor o visita) desde 12 días antes del vencimiento hasta el corte (pedido del 25-nov-2026)
-        out[pre + "solo"] = np.where(incl, ((out[pre + "pd"] == 0) & ~out["credito"].isin(set(Gk["credito"]))).astype(float), np.nan)
+        # Paga solo: cuota vencida que al corte no está en mora y no tuvo ninguna gestión de gestor (llamada, WhatsApp o
+        # visita; SMS y predictivo no cuentan) desde 12 días antes del vencimiento hasta el corte (pedido del 25-nov-2026)
+        out[pre + "solo"] = np.where(incl, ((out[pre + "pd"] == 0) & ~out["credito"].isin(set(gg["credito"]))).astype(float), np.nan)
 
         # Panel de días en mora (hasta 15 días hábiles, antes del corte)
         M = out.loc[mora1, ["credito", "due_b", "w"]]
