@@ -427,6 +427,8 @@ def calcular(u: pd.DataFrame, car: pd.DataFrame, ges: pd.DataFrame, cen: pd.Data
         out[pre + "ps_s"] = marca_ps(~a_tiempo & ~con(Gpp))                            # %PSPS Paga Solo Posterior
         out[pre + "ps_gp"] = marca_ps(a_tiempo & smspred_prev & ~con(gg_prev))         # %PSGP SMS o predictivo previo, sin gestor
         out[pre + "ps_gg"] = marca_ps(a_tiempo & con(gg_prev))                         # %PSGPG gestión previa de un gestor
+        # %PSPT pagó tarde con gestión previa (cualquier tipo) y sin ninguna gestión después del vencimiento antes de pagar
+        out[pre + "ps_t"] = marca_ps(~a_tiempo & con(g_prev) & ~con(Gpp[Gpp["relb"] >= 1]))
         lim = pd.Series(np.where(np.isnan(dpago), VENT + 1, dpago), index=out["credito"].to_numpy())
         GP = gg[gg["relb"] >= 1].copy(); GP["_l"] = GP["credito"].map(lim); GP = GP[GP["relb"] < GP["_l"]]
         out[pre + "gpp"] = np.where(mora1, cnt(GP), np.nan)
