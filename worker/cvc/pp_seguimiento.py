@@ -374,9 +374,6 @@ def calcular(u: pd.DataFrame, car: pd.DataFrame, ges: pd.DataFrame, cen: pd.Data
         out[pre + "prev"] = np.where(incl, tiene(gg[gg["relb"].between(-3, -1)]), np.nan)
         out[pre + "gd1"] = np.where(mora1, tiene(gg[gg["relb"] == 1]), np.nan)
         out[pre + "tel12"] = np.where(mora1, tiene(Gk[Gk["tel"] & Gk["relb"].between(1, 2)]), np.nan)
-        # Paga solo: cuota vencida que al corte no está en mora y no tuvo ninguna gestión de gestor (llamada, WhatsApp o
-        # visita; SMS y predictivo no cuentan) desde 12 días antes del vencimiento hasta el corte (pedido del 25-nov-2026)
-        out[pre + "solo"] = np.where(incl, ((out[pre + "pd"] == 0) & ~out["credito"].isin(set(gg["credito"]))).astype(float), np.nan)
 
         # Panel de días en mora (hasta 15 días hábiles, antes del corte)
         M = out.loc[mora1, ["credito", "due_b", "w"]]
@@ -415,6 +412,21 @@ def calcular(u: pd.DataFrame, car: pd.DataFrame, ges: pd.DataFrame, cen: pd.Data
         out[pre + "gmr"] = np.where(mora1, cnt(GM, "rpc"), np.nan)        # RPC en mora
         # gestiones de gestor antes de pagar (desde el día 1 de mora hasta el día anterior al pago)
         out[pre + "dpago"] = np.where(mora1, dpago, np.nan)
+        # Paga Solo (términos del 25-nov-2026). Todas: cuota vencida y sin mora al corte. "Previa" = desde 12 días antes
+        # hasta el día del vencimiento (día hábil relativo <= 0). Sin gestión = ningún tipo (SMS, predictivo ni gestor).
+        sin_mora = incl.to_numpy() & (out[pre + "pd"] == 0).to_numpy()
+        a_tiempo = (cv1 < U) | (np.isnan(cv1) & sin_mora)            # pagó antes o el propio día del vencimiento
+        con = lambda df: out["credito"].isin(set(df["credito"])).to_numpy()
+        g_prev, gg_prev = Gk[Gk["relb"] <= 0], gg[gg["relb"] <= 0]
+        lim_pago = out["credito"].map(pd.Series(np.where(np.isnan(dpago), 10_000, dpago), index=out["credito"].to_numpy()))
+        Gpp = Gk.assign(_l=Gk["credito"].map(lim_pago)); Gpp = Gpp[Gpp["relb"] < Gpp["_l"]]   # gestiones antes de pagar
+        smspred_prev = con(g_prev[~g_prev["gestion"]])
+        marca_ps = lambda m: np.where(incl, (sin_mora & m).astype(float), np.nan)
+        out[pre + "ps_p"] = marca_ps(~con(Gk))                                         # %PSP  Paga Solo Puro
+        out[pre + "ps_v"] = marca_ps(a_tiempo & ~con(g_prev))                          # %PSV  Paga Solo Vencimiento
+        out[pre + "ps_s"] = marca_ps(~a_tiempo & ~con(Gpp))                            # %PSPS Paga Solo Posterior
+        out[pre + "ps_gp"] = marca_ps(a_tiempo & smspred_prev & ~con(gg_prev))         # %PSGP SMS o predictivo previo, sin gestor
+        out[pre + "ps_gg"] = marca_ps(a_tiempo & con(gg_prev))                         # %PSGPG gestión previa de un gestor
         lim = pd.Series(np.where(np.isnan(dpago), VENT + 1, dpago), index=out["credito"].to_numpy())
         GP = gg[gg["relb"] >= 1].copy(); GP["_l"] = GP["credito"].map(lim); GP = GP[GP["relb"] < GP["_l"]]
         out[pre + "gpp"] = np.where(mora1, cnt(GP), np.nan)

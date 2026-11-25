@@ -345,7 +345,8 @@ def pds_por_cosecha(seg: dict) -> dict:
         for k in ("c", "d"):
             base[f"{k}{n}_i"] = x[f"{k}_incl"].reindex(base.index)
             base[f"{k}{n}_p"] = x[f"{k}_pd"].reindex(base.index)
-            base[f"{k}{n}_s"] = x[f"{k}_solo"].reindex(base.index)   # paga solo (sin ninguna gestión)
+            for ps in ("p", "v", "s", "gp", "gg"):   # términos Paga Solo
+                base[f"{k}{n}_{ps}"] = x[f"{k}_ps_{ps}"].reindex(base.index)
         base[f"m{n}"] = x["mes_cobro"].reindex(base.index)
     base = base.reset_index()
     for c in dims:
