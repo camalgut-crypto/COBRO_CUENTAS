@@ -418,7 +418,7 @@ def calcular(u: pd.DataFrame, car: pd.DataFrame, ges: pd.DataFrame, cen: pd.Data
         a_tiempo = (cv1 < U) | (np.isnan(cv1) & sin_mora)            # pagó antes o el propio día del vencimiento
         con = lambda df: out["credito"].isin(set(df["credito"])).to_numpy()
         g_prev, gg_prev = Gk[Gk["relb"] <= 0], gg[gg["relb"] <= 0]
-        lim_pago = out["credito"].map(pd.Series(np.where(np.isnan(dpago), 10_000, dpago), index=out["credito"].to_numpy()))
+        lim_pago = pd.Series(np.where(np.isnan(dpago), 10_000, dpago), index=out["credito"].to_numpy())   # crédito → día del pago
         Gpp = Gk.assign(_l=Gk["credito"].map(lim_pago)); Gpp = Gpp[Gpp["relb"] < Gpp["_l"]]   # gestiones antes de pagar
         smspred_prev = con(g_prev[~g_prev["gestion"]])
         marca_ps = lambda m: np.where(incl, (sin_mora & m).astype(float), np.nan)
